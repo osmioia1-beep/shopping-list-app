@@ -5,39 +5,48 @@ const { Pool } = pg;
 
 async function createPool() {
   const dbUrl = new URL(process.env.DATABASE_URL || "");
+  
+  console.log("DATABASE_URL is set:", !!process.env.DATABASE_URL);
+  console.log("Hostname:", dbUrl.hostname);
 
-  // Resolve hostname to IPv4 address to avoid IPv6 ENETUNREACH on Render
-  let host = dbUrl.hostname;
+  // Resolve hostname to IPv4 BEFORE creating the pool
+  let resolvedHost = dbUrl.hostname;
   try {
     const addresses = await dns.resolve4(dbUrl.hostname);
-    host = addresses[0];
-    console.log(`Resolved ${dbUrl.hostname} -> ${host}`);
+    resolvedHost = addresses[0];
+    console.log(`DNS resolved ${dbUrl.hostname} -> ${resolvedHost}`);
   } catch (e) {
-    console.warn(`Could not resolve ${dbUrl.hostname} to IPv4, using hostname as-is`);
+    console.error("DNS resolution failed:", e.message);
   }
 
-  return new Pool({
-    host,
-    port: parseInt(dbUrl.port) || 5432,
-    user: dbUrl.username,
-    password: dbUrl.password,
-    database: dbUrl.pathname.replace(/^\//, ""),
+  // Build a new connection string with the resolved IPv4 address
+  // Use the IP directly so pg never does DNS resolution
+  const connectionString = `postgresql://${dbUrl.username}:${dbUrl.password}@${resolvedHost}:${dbUrl.port || 5432}${dbUrl.pathname}`;
+  
+  console.log("Connecting to:", connectionString.replace(/:[^:@]+@/, ":****@"));
+
+  const pool = new Pool({
+    connectionString,
     ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
   });
+  
+  return pool;
 }
 
 // Initialize pool and database
 let pool;
 
 async function initDb() {
+  console.log("Starting initDb...");
   pool = await createPool();
+  console.log("Pool created, testing connection...");
 
-  // Test connection
   try {
-    await pool.query("SELECT NOW()");
-    console.log("PostgreSQL connected");
+    const result = await pool.query("SELECT NOW()");
+    console.log("PostgreSQL connected, server time:", result.rows[0].now);
   } catch (err) {
-    console.error("PostgreSQL connection error:", err.message);
+    console.error("PostgreSQL connection error:", err.code, err.message);
+    throw err;
   }
 
   // Create tables
@@ -66,7 +75,6 @@ async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_items_purchased ON items(purchased);
     `);
 
-    // Insert default list if none exists
     const result = await client.query("SELECT COUNT(*) as count FROM lists");
     if (parseInt(result.rows[0].count) === 0) {
       await client.query("INSERT INTO lists (name) VALUES ($1)", ["Minha Lista"]);
