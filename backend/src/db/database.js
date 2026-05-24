@@ -7,27 +7,35 @@ async function createPool() {
   const dbUrl = new URL(process.env.DATABASE_URL || "");
   
   console.log("DATABASE_URL is set:", !!process.env.DATABASE_URL);
-  console.log("Hostname:", dbUrl.hostname);
+  console.log("Original hostname:", dbUrl.hostname);
 
-  // Resolve hostname to IPv4 BEFORE creating the pool
-  let resolvedHost = dbUrl.hostname;
+  // Try Supavisor pooler hostname for eu-west-1
+  // Pooler format: aws-0-{region}.pooler.supabase.com
+  const poolerHost = "aws-0-eu-west-1.pooler.supabase.com";
+  
+  // Resolve pooler hostname to IPv4
+  let resolvedHost = poolerHost;
   try {
-    const addresses = await dns.resolve4(dbUrl.hostname);
-    resolvedHost = addresses[0];
-    console.log(`DNS resolved ${dbUrl.hostname} -> ${resolvedHost}`);
+    const addresses = await dns.resolve4(poolerHost);
+    if (addresses.length > 0) {
+      resolvedHost = addresses[0];
+      console.log(`Pooler DNS resolved ${poolerHost} -> ${resolvedHost}`);
+    }
   } catch (e) {
-    console.error("DNS resolution failed:", e.message);
+    console.log("Pooler DNS resolution failed, using hostname as-is:", e.message);
   }
 
-  // Build a new connection string with the resolved IPv4 address
-  // Use the IP directly so pg never does DNS resolution
-  const connectionString = `postgresql://${dbUrl.username}:${dbUrl.password}@${resolvedHost}:${dbUrl.port || 5432}${dbUrl.pathname}`;
+  // Build connection string with pooler host and port 6543
+  // Note: pooler requires project ref in username: postgres.[project-ref]
+  const projectRef = "lfatskduuzwdqoomtphh";
+  const poolerUser = `postgres.${projectRef}`;
+  const connectionString = `postgresql://${poolerUser}:${dbUrl.password}@${resolvedHost}:6543/postgres`;
   
-  console.log("Connecting to:", connectionString.replace(/:[^:@]+@/, ":****@"));
+  console.log("Connecting via pooler to:", `postgresql://${poolerUser}:****@${resolvedHost}:6543/postgres`);
 
   const pool = new Pool({
     connectionString,
-    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+    ssl: { rejectUnauthorized: false },
   });
   
   return pool;
