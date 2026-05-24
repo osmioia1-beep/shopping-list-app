@@ -63,6 +63,7 @@ input {
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
 }
 
 /* ===== Header ===== */
@@ -132,14 +133,23 @@ input {
 
 /* ===== Add Item Form ===== */
 .add-form {
-  padding: 16px;
+  padding: 12px;
   background: white;
   border-bottom: 1px solid var(--gray-200);
 }
 
 .add-form-row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
+}
+
+@media (min-width: 400px) {
+  .add-form {
+    padding: 16px;
+  }
+  .add-form-row {
+    gap: 8px;
+  }
 }
 
 .add-form input {
@@ -156,20 +166,32 @@ input {
 }
 
 .add-form input[name="quantity"] {
-  width: 80px;
+  width: 60px;
   flex: none;
   text-align: center;
+  padding: 12px 8px;
 }
 
 .add-form button {
-  padding: 12px 20px;
+  padding: 12px 14px;
   background: var(--primary);
   color: white;
   border-radius: var(--radius-sm);
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   transition: background 0.2s;
   white-space: nowrap;
+  flex-shrink: 0;
+}
+
+@media (min-width: 400px) {
+  .add-form input[name="quantity"] {
+    width: 80px;
+  }
+  .add-form button {
+    padding: 12px 20px;
+    font-size: 0.9rem;
+  }
 }
 
 .add-form button:hover {
