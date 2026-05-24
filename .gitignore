@@ -1,0 +1,7 @@
+node_modules/
+backend/data/
+*.db
+.env
+
+# Except the built frontend for deployment
+!frontend/dist/

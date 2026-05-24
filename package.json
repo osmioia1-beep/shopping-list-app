@@ -1,0 +1,8 @@
+{
+  "name": "shopping-list-app",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "cd frontend && npm ci && npm run build && cd ../backend && npm ci",
+    "start": "cd backend && NODE_ENV=production node src/index.js"
+  }
+}
