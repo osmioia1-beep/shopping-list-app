@@ -1,14 +1,21 @@
 import pg from "pg";
-import dns from "dns";
+import { URL } from "url";
 const { Pool } = pg;
 
-// Force IPv4 first — Render free tier doesn't support IPv6 outbound
-dns.setDefaultResultOrder("ipv4first");
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+// Parse connection string and force IPv4
+const dbUrl = new URL(process.env.DATABASE_URL || "");
+const poolConfig = {
+  host: dbUrl.hostname,
+  port: parseInt(dbUrl.port) || 5432,
+  user: dbUrl.username,
+  password: dbUrl.password,
+  database: dbUrl.pathname.replace(/^\//, ""),
   ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
-});
+  // Force IPv4 — Render free tier doesn't support IPv6
+  family: 4,
+};
+
+const pool = new Pool(poolConfig);
 
 // Test connection
 pool.query("SELECT NOW()").then(() => {
