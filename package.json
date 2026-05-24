@@ -2,7 +2,7 @@
   "name": "shopping-list-app",
   "version": "1.0.0",
   "scripts": {
-    "build": "echo 'Frontend already built' && cd backend && npm ci",
+    "build": "cd backend && npm ci",
     "start": "cd backend && NODE_ENV=production node src/index.js"
   }
 }
