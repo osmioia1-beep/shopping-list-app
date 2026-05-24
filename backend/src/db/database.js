@@ -1,5 +1,9 @@
 import pg from "pg";
+import dns from "dns";
 const { Pool } = pg;
+
+// Force IPv4 first — Render free tier doesn't support IPv6 outbound
+dns.setDefaultResultOrder("ipv4first");
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
