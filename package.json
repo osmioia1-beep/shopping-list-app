@@ -2,7 +2,8 @@
   "name": "shopping-list-app",
   "version": "1.0.0",
   "scripts": {
-    "build": "cd frontend && npm ci && npm run build && cd ../backend && npm ci",
+    "build": "npm run build:frontend && npm install --prefix backend",
+    "build:frontend": "npm ci --prefix frontend && npm run build --prefix frontend",
     "start": "cd backend && NODE_ENV=production node src/index.js"
   }
 }
