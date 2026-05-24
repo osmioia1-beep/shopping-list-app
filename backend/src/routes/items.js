@@ -1,30 +1,33 @@
 import { Router } from "express";
-import { getDb } from "../db/database.js";
+import { pool } from "../db/database.js";
 
 const router = Router({ mergeParams: true });
 
 // Get all items for a list
-router.get("/", (req, res) => {
+router.get("/", async (req, res) => {
   const { listId } = req.params;
-  const db = getDb();
+  try {
+    const list = await pool.query("SELECT * FROM lists WHERE id = $1", [listId]);
+    if (list.rows.length === 0) {
+      return res.status(404).json({ error: "List not found" });
+    }
 
-  const list = db.prepare("SELECT * FROM lists WHERE id = ?").get(listId);
-  if (!list) {
-    return res.status(404).json({ error: "List not found" });
+    // Get items: unpurchased first (alphabetical), then purchased (alphabetical)
+    const items = await pool.query(
+      `SELECT * FROM items
+       WHERE list_id = $1
+       ORDER BY purchased ASC, LOWER(name) ASC`,
+      [listId]
+    );
+    res.json(items.rows);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Internal server error" });
   }
-
-  // Get items: unpurchased first (alphabetical), then purchased (alphabetical)
-  const items = db.prepare(`
-    SELECT * FROM items
-    WHERE list_id = ?
-    ORDER BY purchased ASC, LOWER(name) ASC
-  `).all(listId);
-
-  res.json(items);
 });
 
 // Add item to a list
-router.post("/", (req, res) => {
+router.post("/", async (req, res) => {
   const { listId } = req.params;
   const { name, quantity } = req.body;
 
@@ -32,75 +35,96 @@ router.post("/", (req, res) => {
     return res.status(400).json({ error: "Name is required" });
   }
 
-  const db = getDb();
-  const list = db.prepare("SELECT * FROM lists WHERE id = ?").get(listId);
-  if (!list) {
-    return res.status(404).json({ error: "List not found" });
+  try {
+    const list = await pool.query("SELECT * FROM lists WHERE id = $1", [listId]);
+    if (list.rows.length === 0) {
+      return res.status(404).json({ error: "List not found" });
+    }
+
+    const qty = Math.max(1, parseInt(quantity) || 1);
+    const result = await pool.query(
+      "INSERT INTO items (list_id, name, quantity) VALUES ($1, $2, $3) RETURNING *",
+      [listId, name.trim(), qty]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Internal server error" });
   }
-
-  const qty = Math.max(1, parseInt(quantity) || 1);
-
-  const result = db.prepare(
-    "INSERT INTO items (list_id, name, quantity) VALUES (?, ?, ?)"
-  ).run(listId, name.trim(), qty);
-
-  const newItem = db.prepare("SELECT * FROM items WHERE id = ?").get(result.lastInsertRowid);
-  res.status(201).json(newItem);
 });
 
 // Edit item (name and/or quantity)
-router.put("/:itemId", (req, res) => {
+router.put("/:itemId", async (req, res) => {
   const { listId, itemId } = req.params;
   const { name, quantity } = req.body;
 
-  const db = getDb();
-  const item = db.prepare("SELECT * FROM items WHERE id = ? AND list_id = ?").get(itemId, listId);
-  if (!item) {
-    return res.status(404).json({ error: "Item not found" });
+  try {
+    const item = await pool.query(
+      "SELECT * FROM items WHERE id = $1 AND list_id = $2",
+      [itemId, listId]
+    );
+    if (item.rows.length === 0) {
+      return res.status(404).json({ error: "Item not found" });
+    }
+
+    const newName = name !== undefined ? (name.trim() || item.rows[0].name) : item.rows[0].name;
+    const newQty = quantity !== undefined ? Math.max(1, parseInt(quantity) || 1) : item.rows[0].quantity;
+
+    const updated = await pool.query(
+      "UPDATE items SET name = $1, quantity = $2, updated_at = NOW() WHERE id = $3 RETURNING *",
+      [newName, newQty, itemId]
+    );
+    res.json(updated.rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Internal server error" });
   }
-
-  const newName = name !== undefined ? (name.trim() || item.name) : item.name;
-  const newQty = quantity !== undefined ? Math.max(1, parseInt(quantity) || 1) : item.quantity;
-
-  db.prepare(
-    "UPDATE items SET name = ?, quantity = ?, updated_at = datetime('now') WHERE id = ?"
-  ).run(newName, newQty, itemId);
-
-  const updated = db.prepare("SELECT * FROM items WHERE id = ?").get(itemId);
-  res.json(updated);
 });
 
 // Toggle purchased status (and move to end)
-router.patch("/:itemId/toggle", (req, res) => {
+router.patch("/:itemId/toggle", async (req, res) => {
   const { listId, itemId } = req.params;
 
-  const db = getDb();
-  const item = db.prepare("SELECT * FROM items WHERE id = ? AND list_id = ?").get(itemId, listId);
-  if (!item) {
-    return res.status(404).json({ error: "Item not found" });
+  try {
+    const item = await pool.query(
+      "SELECT * FROM items WHERE id = $1 AND list_id = $2",
+      [itemId, listId]
+    );
+    if (item.rows.length === 0) {
+      return res.status(404).json({ error: "Item not found" });
+    }
+
+    const newStatus = !item.rows[0].purchased;
+    const updated = await pool.query(
+      "UPDATE items SET purchased = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
+      [newStatus, itemId]
+    );
+    res.json(updated.rows[0]);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Internal server error" });
   }
-
-  const newStatus = item.purchased === 1 ? 0 : 1;
-  db.prepare(
-    "UPDATE items SET purchased = ?, updated_at = datetime('now') WHERE id = ?"
-  ).run(newStatus, itemId);
-
-  const updated = db.prepare("SELECT * FROM items WHERE id = ?").get(itemId);
-  res.json(updated);
 });
 
 // Delete item
-router.delete("/:itemId", (req, res) => {
+router.delete("/:itemId", async (req, res) => {
   const { listId, itemId } = req.params;
 
-  const db = getDb();
-  const item = db.prepare("SELECT * FROM items WHERE id = ? AND list_id = ?").get(itemId, listId);
-  if (!item) {
-    return res.status(404).json({ error: "Item not found" });
-  }
+  try {
+    const item = await pool.query(
+      "SELECT * FROM items WHERE id = $1 AND list_id = $2",
+      [itemId, listId]
+    );
+    if (item.rows.length === 0) {
+      return res.status(404).json({ error: "Item not found" });
+    }
 
-  db.prepare("DELETE FROM items WHERE id = ? AND list_id = ?").run(itemId, listId);
-  res.json({ success: true, id: parseInt(itemId) });
+    await pool.query("DELETE FROM items WHERE id = $1 AND list_id = $2", [itemId, listId]);
+    res.json({ success: true, id: parseInt(itemId) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 export default router;

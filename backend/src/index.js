@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
+import { pool } from "./db/database.js";
 import listsRouter from "./routes/lists.js";
 import itemsRouter from "./routes/items.js";
 
@@ -20,7 +21,6 @@ app.use("/api/lists/:listId/items", itemsRouter);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === "production") {
-  // Go up from backend/src/ to repo root, then into frontend/dist
   const frontendPath = path.resolve(__dirname, "..", "..", "frontend", "dist");
   console.log("Serving frontend from:", frontendPath);
   app.use(express.static(frontendPath));

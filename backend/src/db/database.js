@@ -1,55 +1,57 @@
-import Database from "better-sqlite3";
-import path from "path";
-import { fileURLToPath } from "url";
-import fs from "fs";
+import pg from "pg";
+const { Pool } = pg;
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = process.env.DB_PATH || path.join(__dirname, "..", "data", "shopping.db");
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+});
 
-// Ensure data directory exists
-const dataDir = path.dirname(dbPath);
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
+// Test connection
+pool.query("SELECT NOW()").then(() => {
+  console.log("PostgreSQL connected");
+}).catch((err) => {
+  console.error("PostgreSQL connection error:", err.message);
+});
+
+// Initialize tables
+async function initDb() {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS lists (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS items (
+        id SERIAL PRIMARY KEY,
+        list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        purchased BOOLEAN NOT NULL DEFAULT false,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_items_list_id ON items(list_id);
+      CREATE INDEX IF NOT EXISTS idx_items_purchased ON items(purchased);
+    `);
+
+    // Insert default list if none exists
+    const result = await client.query("SELECT COUNT(*) as count FROM lists");
+    if (parseInt(result.rows[0].count) === 0) {
+      await client.query("INSERT INTO lists (name) VALUES ($1)", ["Minha Lista"]);
+    }
+
+    console.log("Database initialized");
+  } finally {
+    client.release();
+  }
 }
 
-const sqlite = new Database(dbPath);
+initDb();
 
-// Enable WAL mode for better concurrent access
-sqlite.pragma("journal_mode = WAL");
-
-// Create tables if they don't exist
-sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS lists (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
-  );
-
-  CREATE TABLE IF NOT EXISTS items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    list_id INTEGER NOT NULL,
-    name TEXT NOT NULL,
-    quantity INTEGER NOT NULL DEFAULT 1,
-    purchased INTEGER NOT NULL DEFAULT 0,
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now')),
-    FOREIGN KEY (list_id) REFERENCES lists(id) ON DELETE CASCADE
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_items_list_id ON items(list_id);
-  CREATE INDEX IF NOT EXISTS idx_items_purchased ON items(purchased);
-`);
-
-// Insert default list if none exists
-const listCount = sqlite.prepare("SELECT COUNT(*) as count FROM lists").get();
-if (listCount.count === 0) {
-  sqlite.prepare("INSERT INTO lists (name) VALUES (?)").run("Minha Lista");
-}
-
-console.log("Database initialized at:", dbPath);
-
-export function getDb() {
-  return sqlite;
-}
+export { pool };
