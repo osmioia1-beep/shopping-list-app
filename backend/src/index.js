@@ -20,7 +20,9 @@ app.use("/api/lists/:listId/items", itemsRouter);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === "production") {
-  const frontendPath = path.join(__dirname, "..", "frontend", "dist");
+  // Go up from backend/src/ to repo root, then into frontend/dist
+  const frontendPath = path.resolve(__dirname, "..", "..", "frontend", "dist");
+  console.log("Serving frontend from:", frontendPath);
   app.use(express.static(frontendPath));
 
   // SPA fallback — serve index.html for all non-API routes
