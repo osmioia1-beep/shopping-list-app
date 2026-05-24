@@ -28,20 +28,22 @@ function AddItemForm({ onAdd }) {
   return (
     <form className="add-form" onSubmit={handleSubmit}>
       <div className="add-form-row">
-        <input
-          type="text"
-          placeholder="Adicionar item..."
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <input
-          type="number"
-          name="quantity"
-          min="1"
-          max="999"
-          value={quantity}
-          onChange={(e) => setQuantity(e.target.value)}
-        />
+        <div className="form-top">
+          <input
+            type="text"
+            placeholder="Adicionar item..."
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+          <input
+            type="number"
+            name="quantity"
+            min="1"
+            max="999"
+            value={quantity}
+            onChange={(e) => setQuantity(e.target.value)}
+          />
+        </div>
         <button type="submit" disabled={!name.trim()}>
           Adicionar
         </button>
