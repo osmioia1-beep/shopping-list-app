@@ -1,31 +1,46 @@
 import pg from "pg";
 import { URL } from "url";
+import dns from "dns/promises";
 const { Pool } = pg;
 
-// Parse connection string and force IPv4
-const dbUrl = new URL(process.env.DATABASE_URL || "");
-const poolConfig = {
-  host: dbUrl.hostname,
-  port: parseInt(dbUrl.port) || 5432,
-  user: dbUrl.username,
-  password: dbUrl.password,
-  database: dbUrl.pathname.replace(/^\//, ""),
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
-  // Force IPv4 — Render free tier doesn't support IPv6
-  family: 4,
-};
+async function createPool() {
+  const dbUrl = new URL(process.env.DATABASE_URL || "");
 
-const pool = new Pool(poolConfig);
+  // Resolve hostname to IPv4 address to avoid IPv6 ENETUNREACH on Render
+  let host = dbUrl.hostname;
+  try {
+    const addresses = await dns.resolve4(dbUrl.hostname);
+    host = addresses[0];
+    console.log(`Resolved ${dbUrl.hostname} -> ${host}`);
+  } catch (e) {
+    console.warn(`Could not resolve ${dbUrl.hostname} to IPv4, using hostname as-is`);
+  }
 
-// Test connection
-pool.query("SELECT NOW()").then(() => {
-  console.log("PostgreSQL connected");
-}).catch((err) => {
-  console.error("PostgreSQL connection error:", err.message);
-});
+  return new Pool({
+    host,
+    port: parseInt(dbUrl.port) || 5432,
+    user: dbUrl.username,
+    password: dbUrl.password,
+    database: dbUrl.pathname.replace(/^\//, ""),
+    ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+  });
+}
 
-// Initialize tables
+// Initialize pool and database
+let pool;
+
 async function initDb() {
+  pool = await createPool();
+
+  // Test connection
+  try {
+    await pool.query("SELECT NOW()");
+    console.log("PostgreSQL connected");
+  } catch (err) {
+    console.error("PostgreSQL connection error:", err.message);
+  }
+
+  // Create tables
   const client = await pool.connect();
   try {
     await client.query(`
@@ -63,6 +78,6 @@ async function initDb() {
   }
 }
 
-initDb();
+const dbPromise = initDb();
 
-export { pool };
+export { pool, dbPromise };

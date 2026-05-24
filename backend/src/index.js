@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
-import { pool } from "./db/database.js";
+import { pool, dbPromise } from "./db/database.js";
 import listsRouter from "./routes/lists.js";
 import itemsRouter from "./routes/items.js";
 
@@ -33,7 +33,8 @@ if (process.env.NODE_ENV === "production") {
   });
 }
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
+  await dbPromise;
   console.log(`Server running on port ${PORT}`);
   console.log(`API available at http://localhost:${PORT}/api`);
 });
