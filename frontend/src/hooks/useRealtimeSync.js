@@ -3,8 +3,8 @@ import { supabase } from "../services/supabase.js";
 
 /**
  * Hook that subscribes to Supabase Realtime changes for a given list.
- * When another device/client modifies items, this hook triggers a reload.
- * Also shows a sync indicator ("sincronizado" pulse).
+ * Subscribes to ALL changes (INSERT, UPDATE, DELETE) on items, lists, and purchase_history.
+ * Also shows a sync indicator in the UI.
  */
 export function useRealtimeSync(listId, onReload) {
   const [syncConnected, setSyncConnected] = useState(false);
@@ -15,9 +15,13 @@ export function useRealtimeSync(listId, onReload) {
   useEffect(() => {
     if (!listId) return;
 
-    // Subscribe to changes on items table for this list
+    const channelName = `realtime:list:${listId}`;
+
+    console.log("[Realtime] Subscribing to channel:", channelName, "listId:", listId);
+
     const channel = supabase
-      .channel(`realtime:items:${listId}`)
+      .channel(channelName)
+      // Subscribe to ALL item changes (INSERT, UPDATE, DELETE) for this list
       .on(
         "postgres_changes",
         {
@@ -27,14 +31,14 @@ export function useRealtimeSync(listId, onReload) {
           filter: `list_id=eq.${listId}`,
         },
         (payload) => {
-          // Trigger reload when another client changes data
-          // Only reload if this wasn't triggered by the current user
+          console.log("[Realtime] Items change:", payload.eventType, payload.new, payload.old);
           if (onReloadRef.current) {
             onReloadRef.current();
           }
           setLastSyncAt(new Date());
         }
       )
+      // Subscribe to ALL list changes (INSERT, UPDATE, DELETE)
       .on(
         "postgres_changes",
         {
@@ -43,24 +47,49 @@ export function useRealtimeSync(listId, onReload) {
           table: "lists",
         },
         (payload) => {
-          // If lists changed (created/deleted/renamed), trigger reload
-          if (onReloadRef.current && payload.eventType === "INSERT") {
+          console.log("[Realtime] Lists change:", payload.eventType, payload.new, payload.old);
+          if (onReloadRef.current) {
             onReloadRef.current();
           }
           setLastSyncAt(new Date());
         }
       )
-      .subscribe((status) => {
+      // Subscribe to ALL history changes (for stats sync)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "purchase_history",
+          filter: `list_id=eq.${listId}`,
+        },
+        (payload) => {
+          console.log("[Realtime] History change:", payload.eventType);
+          if (onReloadRef.current) {
+            onReloadRef.current();
+          }
+          setLastSyncAt(new Date());
+        }
+      )
+      .subscribe((status, err) => {
+        console.log("[Realtime] Subscribe status:", status, err || "");
         if (status === "SUBSCRIBED") {
           setSyncConnected(true);
-        } else if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          console.log("[Realtime] ✅ Connected!");
+        } else if (status === "CHANNEL_ERROR") {
           setSyncConnected(false);
+          console.error("[Realtime] ❌ Channel error:", err);
+        } else if (status === "TIMED_OUT") {
+          setSyncConnected(false);
+          console.error("[Realtime] ⏰ Timed out");
         }
       });
 
     return () => {
-      supabase.removeChannel(channel);
-      setSyncConnected(false);
+      console.log("[Realtime] Unsubscribing from channel:", channelName);
+      supabase.removeChannel(channel).then(() => {
+        setSyncConnected(false);
+      });
     };
   }, [listId]);
 
