@@ -26,42 +26,6 @@ function haptic() {
   try { if (navigator.vibrate) navigator.vibrate(15); } catch { /* */ }
 }
 
-// ===== Frequent Items Hook (for autocomplete) =====
-function useFrequentItems() {
-  const [frequentItems, setFrequentItems] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem("shopping-list-frequent") || "[]");
-    } catch { return []; }
-  });
-
-  const recordItem = useCallback((name) => {
-    const normalized = name.trim().toLowerCase();
-    if (!normalized) return;
-    setFrequentItems(prev => {
-      const existing = prev.find(i => i.name === normalized);
-      const updated = existing
-        ? prev.map(i => i.name === normalized ? { ...i, count: i.count + 1 } : i)
-        : [...prev, { name: normalized, count: 1 }];
-      // Keep top 20 by frequency
-      const sorted = updated.sort((a, b) => b.count - a.count).slice(0, 20);
-      try { localStorage.setItem("shopping-list-frequent", JSON.stringify(sorted)); } catch { /* */ }
-      return sorted;
-    });
-  }, []);
-
-  const suggestions = useCallback((query) => {
-    if (!query || query.length < 1) return [];
-    const q = query.toLowerCase();
-    return frequentItems
-      .filter(i => i.name.includes(q))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 6)
-      .map(i => i.name);
-  }, [frequentItems]);
-
-  return { suggestions, recordItem };
-}
-
 // ===== Sort Options =====
 const SORT_OPTIONS = [
   { key: "default", label: "Padrão" },
@@ -97,87 +61,39 @@ function ErrorBanner({ error, onDismiss }) {
   );
 }
 
-// ===== Quantity Stepper =====
-function QuantityStepper({ value, onChange }) {
-  return (
-    <div className="qty-stepper">
-      <button type="button" className="qty-btn" onClick={() => onChange(Math.max(1, (value || 1) - 1))} aria-label="Diminuir">−</button>
-      <span className="qty-value">{value || 1}</span>
-      <button type="button" className="qty-btn" onClick={() => onChange(Math.min(999, (value || 1) + 1))} aria-label="Aumentar">+</button>
-    </div>
-  );
-}
-
-// ===== Autocomplete Dropdown =====
-function AutocompleteDropdown({ suggestions, onSelect, visible }) {
-  if (!visible || suggestions.length === 0) return null;
-  return (
-    <div className="autocomplete-list">
-      {suggestions.map((s, i) => (
-        <button key={i} className="autocomplete-item" onClick={() => onSelect(s)}>
-          <span className="autocomplete-icon">🕐</span>
-          <span className="autocomplete-name">{s}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
 // ===== Add Item Form =====
-function AddItemForm({ onAdd, onRecordItem }) {
+function AddItemForm({ onAdd }) {
   const [name, setName] = useState("");
   const [quantity, setQuantity] = useState(1);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [suggestions, setSuggestions] = useState([]);
-  const inputRef = useRef(null);
-  const { suggestions: getSuggestions } = useFrequentItems();
-
-  const handleNameChange = (val) => {
-    setName(val);
-    const s = getSuggestions(val);
-    setSuggestions(s);
-    setShowSuggestions(s.length > 0);
-  };
-
-  const handleSelectSuggestion = (s) => {
-    setName(s);
-    setShowSuggestions(false);
-    inputRef.current?.focus();
-  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!name.trim()) return;
     onAdd(name.trim(), quantity || 1);
-    onRecordItem(name.trim());
     setName("");
     setQuantity(1);
-    setShowSuggestions(false);
   };
 
   return (
     <form className="add-form" onSubmit={handleSubmit}>
       <div className="add-form-row">
         <div className="form-top">
-          <div className="autocomplete-wrapper">
-            <input
-              ref={inputRef}
-              type="text"
-              name="name"
-              placeholder="Adicionar item..."
-              value={name}
-              onChange={(e) => handleNameChange(e.target.value)}
-              onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
-              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
-              autoComplete="off"
-            />
-            <AutocompleteDropdown
-              suggestions={suggestions}
-              onSelect={handleSelectSuggestion}
-              visible={showSuggestions}
-            />
-          </div>
-          <QuantityStepper value={quantity} onChange={setQuantity} />
+          <input
+            type="text"
+            name="name"
+            placeholder="Adicionar item..."
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoComplete="off"
+          />
+          <input
+            type="number"
+            name="quantity"
+            min="1"
+            max="999"
+            value={quantity}
+            onChange={(e) => setQuantity(e.target.valueAsNumber || 1)}
+          />
         </div>
         <button type="submit" disabled={!name.trim()}>
           ＋ Adicionar
@@ -252,37 +168,19 @@ function SearchBar({ value, onChange }) {
   );
 }
 
-// ===== Sort Menu =====
-function SortMenu({ value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef(null);
-
-  useEffect(() => {
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
-
-  const label = SORT_OPTIONS.find(o => o.key === value)?.label || "Padrão";
-
+// ===== Sort Bar (full width, below search) =====
+function SortBar({ value, onChange }) {
   return (
-    <div className="sort-menu" ref={ref}>
-      <button className="sort-btn" onClick={() => setOpen(!open)} aria-label="Ordenar">
-        ⇅ {label}
-      </button>
-      {open && (
-        <div className="sort-dropdown">
-          {SORT_OPTIONS.map(opt => (
-            <button
-              key={opt.key}
-              className={`sort-option ${opt.key === value ? "active" : ""}`}
-              onClick={() => { onChange(opt.key); setOpen(false); }}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
-      )}
+    <div className="sort-bar">
+      {SORT_OPTIONS.map(opt => (
+        <button
+          key={opt.key}
+          className={`sort-chip ${opt.key === value ? "active" : ""}`}
+          onClick={() => onChange(opt.key)}
+        >
+          {opt.label}
+        </button>
+      ))}
     </div>
   );
 }
@@ -366,23 +264,19 @@ export default function App() {
   const [isDark, toggleDark] = useDarkMode();
   const [searchQuery, setSearchQuery] = useState("");
   const [sortKey, setSortKey] = useState("default");
-  const { recordItem } = useFrequentItems();
 
   const activeList = lists.find((l) => l.id === activeListId);
   const allItems = items || [];
 
-  // Filter by search
   const filteredItems = useMemo(() => {
     if (!searchQuery.trim()) return allItems;
     const q = searchQuery.toLowerCase();
     return allItems.filter(i => i.name.toLowerCase().includes(q));
   }, [allItems, searchQuery]);
 
-  // Split active/purchased
   const activeItemsRaw = filteredItems.filter(i => !i.purchased);
   const purchasedItemsRaw = filteredItems.filter(i => i.purchased);
 
-  // Sort
   const activeItems = useMemo(() => sortItems(activeItemsRaw, sortKey), [activeItemsRaw, sortKey]);
   const purchasedItems = useMemo(() => sortItems(purchasedItemsRaw, sortKey), [purchasedItemsRaw, sortKey]);
 
@@ -420,12 +314,12 @@ export default function App() {
         <ListTabs lists={lists} activeId={activeListId} onSelect={setActiveListId} />
       )}
 
-      <AddItemForm onAdd={addItem} onRecordItem={recordItem} />
+      <AddItemForm onAdd={addItem} />
 
-      {/* Toolbar: Search + Sort */}
+      {/* Toolbar: Search + Sort below */}
       <div className="toolbar">
         <SearchBar value={searchQuery} onChange={setSearchQuery} />
-        <SortMenu value={sortKey} onChange={setSortKey} />
+        <SortBar value={sortKey} onChange={setSortKey} />
       </div>
 
       <div
