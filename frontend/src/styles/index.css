@@ -138,6 +138,34 @@ input {
 }
 .dark-toggle:active { background: rgba(255,255,255,0.3); }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.sync-indicator {
+  font-size: 0.7rem;
+  cursor: default;
+  transition: opacity 0.3s;
+  animation: syncPulse 2s ease-in-out infinite;
+}
+
+.sync-indicator.sync-connected {
+  animation: none;
+  opacity: 1;
+}
+
+.sync-indicator.sync-disconnected {
+  opacity: 0.6;
+}
+
+@keyframes syncPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+
 /* ===== List Tabs ===== */
 .list-tabs {
   display: flex; gap: 8px; padding: 10px 12px;

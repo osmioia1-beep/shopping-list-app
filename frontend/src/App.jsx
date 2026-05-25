@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useShoppingList } from "./hooks/useShoppingList.js";
+import { useRealtimeSync } from "./hooks/useRealtimeSync.js";
 
 // ===== Dark Mode Hook =====
 function useDarkMode() {
@@ -486,6 +487,11 @@ export default function App() {
   const [sortKey, setSortKey] = useState("default");
   const [showHistory, setShowHistory] = useState(false);
 
+  // Multi-device realtime sync via Supabase
+  const { syncConnected, lastSyncAt } = useRealtimeSync(activeListId, () => {
+    reloadAll();
+  });
+
   const activeList = lists.find((l) => l.id === activeListId);
   const allItems = items || [];
 
@@ -509,7 +515,10 @@ export default function App() {
       <div className="app">
         <div className="header">
           <div className="header-left"><h1>🛒 Shopping List</h1></div>
-          <button className="dark-toggle" onClick={toggleDark}>{isDark ? "☀️" : "🌙"}</button>
+          <div className="header-right">
+            <span className="sync-indicator sync-disconnected" title="A conectar…">🟠</span>
+            <button className="dark-toggle" onClick={toggleDark}>{isDark ? "☀️" : "🌙"}</button>
+          </div>
         </div>
         <LoadingSpinner />
       </div>
@@ -523,7 +532,12 @@ export default function App() {
           <h1>🛒 Shopping List</h1>
           {activeList && <div className="header-subtitle">{activeList.name}</div>}
         </div>
-        <button className="dark-toggle" onClick={toggleDark}>{isDark ? "☀️" : "🌙"}</button>
+        <div className="header-right">
+          <span className={`sync-indicator ${syncConnected ? "sync-connected" : "sync-disconnected"}`} title={syncConnected ? "Sincronização em tempo real ativa" : "Sem conexão em tempo real"}>
+            {syncConnected ? "🟢" : "🟠"}
+          </span>
+          <button className="dark-toggle" onClick={toggleDark}>{isDark ? "☀️" : "🌙"}</button>
+        </div>
       </header>
 
       <ErrorBanner error={error} onDismiss={() => setError(null)} />

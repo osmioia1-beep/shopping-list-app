@@ -91,6 +91,11 @@ async function initDb() {
       CREATE INDEX IF NOT EXISTS idx_items_purchased ON items(purchased);
       CREATE INDEX IF NOT EXISTS idx_history_list_id ON purchase_history(list_id);
       CREATE INDEX IF NOT EXISTS idx_history_name ON purchase_history(name);
+
+      -- Enable Realtime: REPLICA IDENTITY FULL required for UPDATE/DELETE events
+      ALTER TABLE lists REPLICA IDENTITY FULL;
+      ALTER TABLE items REPLICA IDENTITY FULL;
+      ALTER TABLE purchase_history REPLICA IDENTITY FULL;
     `);
 
     const result = await client.query("SELECT COUNT(*) as count FROM lists");
