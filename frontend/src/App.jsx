@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { useShoppingList } from "./hooks/useShoppingList.js";
 
 // ===== Dark Mode Hook =====
@@ -8,32 +8,82 @@ function useDarkMode() {
       const stored = localStorage.getItem("shopping-list-theme");
       if (stored) return stored === "dark";
       return window.matchMedia("(prefers-color-scheme: dark)").matches;
-    } catch {
-      return false;
-    }
+    } catch { return false; }
   });
 
   useEffect(() => {
     const root = document.documentElement;
-    if (isDark) {
-      root.setAttribute("data-theme", "dark");
-    } else {
-      root.removeAttribute("data-theme");
-    }
-    try {
-      localStorage.setItem("shopping-list-theme", isDark ? "dark" : "light");
-    } catch { /* ignore */ }
+    if (isDark) root.setAttribute("data-theme", "dark");
+    else root.removeAttribute("data-theme");
+    try { localStorage.setItem("shopping-list-theme", isDark ? "dark" : "light"); } catch { /* */ }
   }, [isDark]);
 
-  const toggle = useCallback(() => setIsDark((d) => !d), []);
-  return [isDark, toggle];
+  return [isDark, useCallback(() => setIsDark(d => !d), [])];
 }
 
-// ===== Haptic Feedback =====
+// ===== Haptic =====
 function haptic() {
-  try {
-    if (navigator.vibrate) navigator.vibrate(15);
-  } catch { /* ignore */ }
+  try { if (navigator.vibrate) navigator.vibrate(15); } catch { /* */ }
+}
+
+// ===== Frequent Items Hook (for autocomplete) =====
+function useFrequentItems() {
+  const [frequentItems, setFrequentItems] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("shopping-list-frequent") || "[]");
+    } catch { return []; }
+  });
+
+  const recordItem = useCallback((name) => {
+    const normalized = name.trim().toLowerCase();
+    if (!normalized) return;
+    setFrequentItems(prev => {
+      const existing = prev.find(i => i.name === normalized);
+      const updated = existing
+        ? prev.map(i => i.name === normalized ? { ...i, count: i.count + 1 } : i)
+        : [...prev, { name: normalized, count: 1 }];
+      // Keep top 20 by frequency
+      const sorted = updated.sort((a, b) => b.count - a.count).slice(0, 20);
+      try { localStorage.setItem("shopping-list-frequent", JSON.stringify(sorted)); } catch { /* */ }
+      return sorted;
+    });
+  }, []);
+
+  const suggestions = useCallback((query) => {
+    if (!query || query.length < 1) return [];
+    const q = query.toLowerCase();
+    return frequentItems
+      .filter(i => i.name.includes(q))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 6)
+      .map(i => i.name);
+  }, [frequentItems]);
+
+  return { suggestions, recordItem };
+}
+
+// ===== Sort Options =====
+const SORT_OPTIONS = [
+  { key: "default", label: "Padrão" },
+  { key: "name", label: "Nome A-Z" },
+  { key: "nameDesc", label: "Nome Z-A" },
+  { key: "qtyAsc", label: "Qtd ↑" },
+  { key: "qtyDesc", label: "Qtd ↓" },
+  { key: "newest", label: "Mais recentes" },
+  { key: "oldest", label: "Mais antigos" },
+];
+
+function sortItems(items, sortKey) {
+  const arr = [...items];
+  switch (sortKey) {
+    case "name": return arr.sort((a, b) => a.name.localeCompare(b.name, "pt"));
+    case "nameDesc": return arr.sort((a, b) => b.name.localeCompare(a.name, "pt"));
+    case "qtyAsc": return arr.sort((a, b) => (a.quantity || 1) - (b.quantity || 1));
+    case "qtyDesc": return arr.sort((a, b) => (b.quantity || 1) - (a.quantity || 1));
+    case "newest": return arr.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    case "oldest": return arr.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+    default: return arr;
+  }
 }
 
 // ===== Error Banner =====
@@ -47,39 +97,87 @@ function ErrorBanner({ error, onDismiss }) {
   );
 }
 
+// ===== Quantity Stepper =====
+function QuantityStepper({ value, onChange }) {
+  return (
+    <div className="qty-stepper">
+      <button type="button" className="qty-btn" onClick={() => onChange(Math.max(1, (value || 1) - 1))} aria-label="Diminuir">−</button>
+      <span className="qty-value">{value || 1}</span>
+      <button type="button" className="qty-btn" onClick={() => onChange(Math.min(999, (value || 1) + 1))} aria-label="Aumentar">+</button>
+    </div>
+  );
+}
+
+// ===== Autocomplete Dropdown =====
+function AutocompleteDropdown({ suggestions, onSelect, visible }) {
+  if (!visible || suggestions.length === 0) return null;
+  return (
+    <div className="autocomplete-list">
+      {suggestions.map((s, i) => (
+        <button key={i} className="autocomplete-item" onClick={() => onSelect(s)}>
+          <span className="autocomplete-icon">🕐</span>
+          <span className="autocomplete-name">{s}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ===== Add Item Form =====
-function AddItemForm({ onAdd }) {
+function AddItemForm({ onAdd, onRecordItem }) {
   const [name, setName] = useState("");
   const [quantity, setQuantity] = useState(1);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const inputRef = useRef(null);
+  const { suggestions: getSuggestions } = useFrequentItems();
+
+  const handleNameChange = (val) => {
+    setName(val);
+    const s = getSuggestions(val);
+    setSuggestions(s);
+    setShowSuggestions(s.length > 0);
+  };
+
+  const handleSelectSuggestion = (s) => {
+    setName(s);
+    setShowSuggestions(false);
+    inputRef.current?.focus();
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!name.trim()) return;
     onAdd(name.trim(), quantity || 1);
+    onRecordItem(name.trim());
     setName("");
     setQuantity(1);
+    setShowSuggestions(false);
   };
 
   return (
     <form className="add-form" onSubmit={handleSubmit}>
       <div className="add-form-row">
         <div className="form-top">
-          <input
-            type="text"
-            name="name"
-            placeholder="Adicionar item..."
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoComplete="off"
-          />
-          <input
-            type="number"
-            name="quantity"
-            min="1"
-            max="999"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.valueAsNumber || 1)}
-          />
+          <div className="autocomplete-wrapper">
+            <input
+              ref={inputRef}
+              type="text"
+              name="name"
+              placeholder="Adicionar item..."
+              value={name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true); }}
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
+              autoComplete="off"
+            />
+            <AutocompleteDropdown
+              suggestions={suggestions}
+              onSelect={handleSelectSuggestion}
+              visible={showSuggestions}
+            />
+          </div>
+          <QuantityStepper value={quantity} onChange={setQuantity} />
         </div>
         <button type="submit" disabled={!name.trim()}>
           ＋ Adicionar
@@ -89,7 +187,7 @@ function AddItemForm({ onAdd }) {
   );
 }
 
-// ===== Item Card (simple, no swipe) =====
+// ===== Item Card =====
 function ItemCard({ item, onToggle, onDelete }) {
   const [justChecked, setJustChecked] = useState(false);
 
@@ -118,13 +216,7 @@ function ItemCard({ item, onToggle, onDelete }) {
         <div className="item-name">{item.name}</div>
       </div>
       <span className="item-quantity-badge">{item.quantity}</span>
-      <button
-        className="item-delete"
-        onClick={handleDelete}
-        aria-label="Apagar item"
-      >
-        🗑
-      </button>
+      <button className="item-delete" onClick={handleDelete} aria-label="Apagar item">🗑</button>
     </div>
   );
 }
@@ -134,14 +226,63 @@ function ListTabs({ lists, activeId, onSelect }) {
   return (
     <div className="list-tabs">
       {lists.map((list) => (
-        <button
-          key={list.id}
-          className={`list-tab ${list.id === activeId ? "active" : ""}`}
-          onClick={() => onSelect(list.id)}
-        >
+        <button key={list.id} className={`list-tab ${list.id === activeId ? "active" : ""}`} onClick={() => onSelect(list.id)}>
           {list.name}
         </button>
       ))}
+    </div>
+  );
+}
+
+// ===== Search Bar =====
+function SearchBar({ value, onChange }) {
+  return (
+    <div className="search-bar">
+      <span className="search-icon">🔍</span>
+      <input
+        type="text"
+        placeholder="Pesquisar items..."
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+      {value && (
+        <button className="search-clear" onClick={() => onChange("")}>✕</button>
+      )}
+    </div>
+  );
+}
+
+// ===== Sort Menu =====
+function SortMenu({ value, onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const label = SORT_OPTIONS.find(o => o.key === value)?.label || "Padrão";
+
+  return (
+    <div className="sort-menu" ref={ref}>
+      <button className="sort-btn" onClick={() => setOpen(!open)} aria-label="Ordenar">
+        ⇅ {label}
+      </button>
+      {open && (
+        <div className="sort-dropdown">
+          {SORT_OPTIONS.map(opt => (
+            <button
+              key={opt.key}
+              className={`sort-option ${opt.key === value ? "active" : ""}`}
+              onClick={() => { onChange(opt.key); setOpen(false); }}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -156,7 +297,17 @@ function LoadingSpinner() {
 }
 
 // ===== Empty State =====
-function EmptyState() {
+function EmptyState({ hasSearch }) {
+  if (hasSearch) {
+    return (
+      <div className="empty-state">
+        <div className="icon">🔍</div>
+        <h3>Sem resultados</h3>
+        <div className="empty-divider" />
+        <p>Nenhum item encontrado para a tua pesquisa.</p>
+      </div>
+    );
+  }
   return (
     <div className="empty-state">
       <div className="icon">🛒</div>
@@ -175,9 +326,7 @@ function usePullToRefresh(listRef, onRefresh) {
 
   const handleTouchStart = useCallback((e) => {
     const el = listRef.current;
-    if (el && el.scrollTop === 0) {
-      startY.current = e.touches[0].clientY;
-    }
+    if (el && el.scrollTop === 0) startY.current = e.touches[0].clientY;
   }, [listRef]);
 
   const handleTouchMove = useCallback((e) => {
@@ -196,10 +345,7 @@ function usePullToRefresh(listRef, onRefresh) {
       setPtrState("refreshing");
       setPtrY(60);
       await onRefresh();
-      setTimeout(() => {
-        setPtrState("idle");
-        setPtrY(0);
-      }, 300);
+      setTimeout(() => { setPtrState("idle"); setPtrY(0); }, 300);
     } else {
       setPtrState("idle");
       setPtrY(0);
@@ -212,23 +358,33 @@ function usePullToRefresh(listRef, onRefresh) {
 // ===== Main App =====
 export default function App() {
   const {
-    lists,
-    activeListId,
-    setActiveListId,
-    items,
-    loading,
-    error,
-    setError,
-    addItem,
-    toggleItem,
-    deleteItem,
-    reloadItems,
+    lists, activeListId, setActiveListId,
+    items, loading, error, setError,
+    addItem, toggleItem, deleteItem, reloadItems,
   } = useShoppingList();
 
   const [isDark, toggleDark] = useDarkMode();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortKey, setSortKey] = useState("default");
+  const { recordItem } = useFrequentItems();
+
   const activeList = lists.find((l) => l.id === activeListId);
-  const activeItems = (items || []).filter((i) => !i.purchased);
-  const purchasedItems = (items || []).filter((i) => i.purchased);
+  const allItems = items || [];
+
+  // Filter by search
+  const filteredItems = useMemo(() => {
+    if (!searchQuery.trim()) return allItems;
+    const q = searchQuery.toLowerCase();
+    return allItems.filter(i => i.name.toLowerCase().includes(q));
+  }, [allItems, searchQuery]);
+
+  // Split active/purchased
+  const activeItemsRaw = filteredItems.filter(i => !i.purchased);
+  const purchasedItemsRaw = filteredItems.filter(i => i.purchased);
+
+  // Sort
+  const activeItems = useMemo(() => sortItems(activeItemsRaw, sortKey), [activeItemsRaw, sortKey]);
+  const purchasedItems = useMemo(() => sortItems(purchasedItemsRaw, sortKey), [purchasedItemsRaw, sortKey]);
 
   const listRef = useRef(null);
   const { ptrState, ptrY, handleTouchStart, handleTouchMove, handleTouchEnd } =
@@ -238,12 +394,8 @@ export default function App() {
     return (
       <div className="app">
         <div className="header">
-          <div className="header-left">
-            <h1>🛒 Shopping List</h1>
-          </div>
-          <button className="dark-toggle" onClick={toggleDark}>
-            {isDark ? "☀️" : "🌙"}
-          </button>
+          <div className="header-left"><h1>🛒 Shopping List</h1></div>
+          <button className="dark-toggle" onClick={toggleDark}>{isDark ? "☀️" : "🌙"}</button>
         </div>
         <LoadingSpinner />
       </div>
@@ -268,7 +420,13 @@ export default function App() {
         <ListTabs lists={lists} activeId={activeListId} onSelect={setActiveListId} />
       )}
 
-      <AddItemForm onAdd={addItem} />
+      <AddItemForm onAdd={addItem} onRecordItem={recordItem} />
+
+      {/* Toolbar: Search + Sort */}
+      <div className="toolbar">
+        <SearchBar value={searchQuery} onChange={setSearchQuery} />
+        <SortMenu value={sortKey} onChange={setSortKey} />
+      </div>
 
       <div
         ref={listRef}
@@ -283,27 +441,17 @@ export default function App() {
           </div>
         )}
 
-        {activeItems.length === 0 && purchasedItems.length === 0 && <EmptyState />}
+        {activeItems.length === 0 && purchasedItems.length === 0 && <EmptyState hasSearch={!!searchQuery.trim()} />}
 
         {activeItems.map((item) => (
-          <ItemCard
-            key={item.id}
-            item={item}
-            onToggle={toggleItem}
-            onDelete={deleteItem}
-          />
+          <ItemCard key={item.id} item={item} onToggle={toggleItem} onDelete={deleteItem} />
         ))}
 
         {purchasedItems.length > 0 && (
           <>
             <div className="divider">Comprados ✓</div>
             {purchasedItems.map((item) => (
-              <ItemCard
-                key={item.id}
-                item={item}
-                onToggle={toggleItem}
-                onDelete={deleteItem}
-              />
+              <ItemCard key={item.id} item={item} onToggle={toggleItem} onDelete={deleteItem} />
             ))}
           </>
         )}
