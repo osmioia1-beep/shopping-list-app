@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useShoppingList } from "./hooks/useShoppingList.js";
 
 // ===== Dark Mode Hook =====
@@ -89,41 +89,9 @@ function AddItemForm({ onAdd }) {
   );
 }
 
-// ===== Item Card with Swipe =====
-function SwipeableItemCard({ item, onToggle, onDelete }) {
-  const [swipeX, setSwipeX] = useState(0);
+// ===== Item Card (simple, no swipe) =====
+function ItemCard({ item, onToggle, onDelete }) {
   const [justChecked, setJustChecked] = useState(false);
-  const startX = useRef(0);
-  const startY = useRef(0);
-  const isDragging = useRef(false);
-  const cardRef = useRef(null);
-  const maxSwipe = 80;
-
-  const handleTouchStart = useCallback((e) => {
-    startX.current = e.touches[0].clientX;
-    startY.current = e.touches[0].clientY;
-    isDragging.current = false;
-  }, []);
-
-  const handleTouchMove = useCallback((e) => {
-    const dx = e.touches[0].clientX - startX.current;
-    const dy = e.touches[0].clientY - startY.current;
-    
-    // Only trigger horizontal swipe if horizontal movement > vertical
-    if (Math.abs(dx) > Math.abs(dy) && dx < 0) {
-      isDragging.current = true;
-      setSwipeX(Math.max(-maxSwipe, dx));
-    }
-  }, []);
-
-  const handleTouchEnd = useCallback(() => {
-    if (swipeX < -50) {
-      setSwipeX(-maxSwipe);
-    } else {
-      setSwipeX(0);
-    }
-    isDragging.current = false;
-  }, [swipeX]);
 
   const handleCheck = useCallback(() => {
     haptic();
@@ -134,42 +102,29 @@ function SwipeableItemCard({ item, onToggle, onDelete }) {
 
   const handleDelete = useCallback(() => {
     haptic();
-    setSwipeX(-300);
-    setTimeout(() => onDelete(item.id), 200);
+    onDelete(item.id);
   }, [item.id, onDelete]);
 
   return (
-    <div className="item-card-swipe">
-      <div className="item-card-bg">Apagar</div>
-      <div
-        ref={cardRef}
-        className={`item-card-inner ${swipeX < -50 ? "swiped-open" : ""}`}
-        style={{ transform: `translateX(${swipeX}px)` }}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
+    <div className={`item-card ${item.purchased ? "purchased" : ""} ${justChecked ? "just-purchased" : ""}`}>
+      <button
+        className={`item-check ${item.purchased ? "checked" : ""} ${justChecked ? "just-checked" : ""}`}
+        onClick={handleCheck}
+        aria-label={item.purchased ? "Desmarcar" : "Marcar como comprado"}
       >
-        <div className={`item-card ${item.purchased ? "purchased" : ""} ${justChecked ? "just-purchased" : ""}`}>
-          <button
-            className={`item-check ${item.purchased ? "checked" : ""} ${justChecked ? "just-checked" : ""}`}
-            onClick={handleCheck}
-            aria-label={item.purchased ? "Desmarcar" : "Marcar como comprado"}
-          >
-            {item.purchased ? "✓" : ""}
-          </button>
-          <div className="item-info">
-            <div className="item-name">{item.name}</div>
-          </div>
-          <span className="item-quantity-badge">{item.quantity}</span>
-          <button
-            className="item-delete"
-            onClick={handleDelete}
-            aria-label="Apagar item"
-          >
-            🗑
-          </button>
-        </div>
+        {item.purchased ? "✓" : ""}
+      </button>
+      <div className="item-info">
+        <div className="item-name">{item.name}</div>
       </div>
+      <span className="item-quantity-badge">{item.quantity}</span>
+      <button
+        className="item-delete"
+        onClick={handleDelete}
+        aria-label="Apagar item"
+      >
+        🗑
+      </button>
     </div>
   );
 }
@@ -207,35 +162,37 @@ function EmptyState() {
       <div className="icon">🛒</div>
       <h3>A tua lista está vazia</h3>
       <div className="empty-divider" />
-      <p>Adiciona itens usando o formulário acima.<br />Desliza um item para a esquerda para o apagar.</p>
+      <p>Adiciona itens usando o formulário acima.<br />Toca no 🗑 para apagar um item.</p>
     </div>
   );
 }
 
 // ===== Pull to Refresh =====
-function usePullToRefresh(onRefresh) {
-  const [ptrState, setPtrState] = useState("idle"); // idle | pulling | refreshing
+function usePullToRefresh(listRef, onRefresh) {
+  const [ptrState, setPtrState] = useState("idle");
   const [ptrY, setPtrY] = useState(0);
   const startY = useRef(0);
-  const listRef = useRef(null);
 
   const handleTouchStart = useCallback((e) => {
-    if (window.scrollY === 0) {
+    const el = listRef.current;
+    if (el && el.scrollTop === 0) {
       startY.current = e.touches[0].clientY;
     }
-  }, []);
+  }, [listRef]);
 
   const handleTouchMove = useCallback((e) => {
-    if (window.scrollY !== 0) return;
+    const el = listRef.current;
+    if (!el || el.scrollTop !== 0) return;
     const dy = e.touches[0].clientY - startY.current;
-    if (dy > 0 && dy < 120) {
+    if (dy > 0 && dy < 150) {
+      e.preventDefault();
       setPtrState("pulling");
       setPtrY(dy);
     }
-  }, []);
+  }, [listRef]);
 
   const handleTouchEnd = useCallback(async () => {
-    if (ptrY > 60) {
+    if (ptrY > 70) {
       setPtrState("refreshing");
       setPtrY(60);
       await onRefresh();
@@ -249,7 +206,7 @@ function usePullToRefresh(onRefresh) {
     }
   }, [ptrY, onRefresh]);
 
-  return { ptrState, ptrY, listRef, handleTouchStart, handleTouchMove, handleTouchEnd };
+  return { ptrState, ptrY, handleTouchStart, handleTouchMove, handleTouchEnd };
 }
 
 // ===== Main App =====
@@ -273,8 +230,9 @@ export default function App() {
   const activeItems = (items || []).filter((i) => !i.purchased);
   const purchasedItems = (items || []).filter((i) => i.purchased);
 
-  const { ptrState, ptrY, listRef, handleTouchStart, handleTouchMove, handleTouchEnd } =
-    usePullToRefresh(() => reloadItems());
+  const listRef = useRef(null);
+  const { ptrState, ptrY, handleTouchStart, handleTouchMove, handleTouchEnd } =
+    usePullToRefresh(listRef, () => reloadItems());
 
   if (loading) {
     return (
@@ -314,21 +272,21 @@ export default function App() {
 
       <div
         ref={listRef}
-        className={`items-list ${ptrState !== "idle" ? "ptr-active" : ""}`}
+        className="items-list"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
         {ptrState !== "idle" && (
-          <div className="ptr-indicator" style={{ opacity: Math.min(ptrY / 60, 1) }}>
-            {ptrState === "refreshing" ? "⏳ A atualizar..." : ptrY > 60 ? "↗️ Soltar para atualizar" : "⬇️ Puxar para atualizar"}
+          <div className="ptr-indicator" style={{ opacity: Math.min(ptrY / 70, 1) }}>
+            {ptrState === "refreshing" ? "⏳ A atualizar..." : ptrY > 70 ? "↗️ Soltar para atualizar" : "⬇️ Puxar para atualizar"}
           </div>
         )}
 
         {activeItems.length === 0 && purchasedItems.length === 0 && <EmptyState />}
 
         {activeItems.map((item) => (
-          <SwipeableItemCard
+          <ItemCard
             key={item.id}
             item={item}
             onToggle={toggleItem}
@@ -340,7 +298,7 @@ export default function App() {
           <>
             <div className="divider">Comprados ✓</div>
             {purchasedItems.map((item) => (
-              <SwipeableItemCard
+              <ItemCard
                 key={item.id}
                 item={item}
                 onToggle={toggleItem}

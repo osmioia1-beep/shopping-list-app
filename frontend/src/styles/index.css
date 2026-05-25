@@ -301,12 +301,9 @@ input {
   flex: 1;
   padding: 8px 12px;
   overflow-y: auto;
-  overscroll-behavior-y: contain;
+  overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-}
-
-.items-list.ptr-active {
-  touch-action: pan-x pan-y;
+  min-height: 0;
 }
 
 @media (min-width: 480px) {
@@ -326,8 +323,6 @@ input {
   margin-bottom: 8px;
   box-shadow: var(--shadow);
   transition: all 0.3s ease;
-  position: relative;
-  overflow: hidden;
 }
 
 @keyframes slideIn {
@@ -337,45 +332,6 @@ input {
 
 .item-card.new {
   animation: slideIn 0.3s ease;
-}
-
-/* Swipe delete reveal */
-.item-card-swipe {
-  position: relative;
-  margin-bottom: 8px;
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.item-card-bg {
-  position: absolute;
-  inset: 0;
-  background: var(--danger);
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 20px;
-  color: white;
-  font-weight: 700;
-  font-size: 0.85rem;
-  gap: 8px;
-  z-index: 0;
-}
-
-.item-card-bg::after {
-  content: "🗑";
-  font-size: 1.3rem;
-}
-
-.item-card-inner {
-  position: relative;
-  z-index: 1;
-  background: var(--bg-card);
-  transition: transform 0.1s ease-out;
-}
-
-.item-card-inner.swiped-open {
-  transform: translateX(-80px);
 }
 
 /* Purchased animation */
