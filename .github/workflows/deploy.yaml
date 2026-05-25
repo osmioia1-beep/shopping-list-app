@@ -1,0 +1,30 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        run: |
+          curl -X POST "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache": false}'
+
+      - name: Wait for deploy
+        run: sleep 30
+
+      - name: Check deploy status
+        run: |
+          DEPLOY_STATUS=$(curl -s "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[0]['status'])")
+          echo "Deploy status: $DEPLOY_STATUS"
+          if [ "$DEPLOY_STATUS" != "live" ] && [ "$DEPLOY_STATUS" != "deployed" ]; then
+            echo "Deploy failed with status: $DEPLOY_STATUS"
+            exit 1
+          fi
