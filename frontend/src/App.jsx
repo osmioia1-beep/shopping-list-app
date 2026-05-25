@@ -142,7 +142,7 @@ function ItemCard({ item, onToggle, onDelete }) {
 }
 
 // ===== List Tabs =====
-function ListTabs({ lists, activeId, onSelect }) {
+function ListTabs({ lists, activeId, onSelect, onCreate }) {
   return (
     <div className="list-tabs">
       {lists.map((list) => (
@@ -150,6 +150,7 @@ function ListTabs({ lists, activeId, onSelect }) {
           {list.name}
         </button>
       ))}
+      <button className="list-tab list-tab-create" onClick={onCreate} title="Nova lista">➕</button>
     </div>
   );
 }
@@ -479,6 +480,7 @@ export default function App() {
     lists, activeListId, setActiveListId,
     items, history, stats,
     loading, error, setError, toast,
+    createList, renameList, deleteList,
     addItem, toggleItem, deleteItem, reAddFromHistory, reloadAll,
   } = useShoppingList();
 
@@ -486,11 +488,44 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortKey, setSortKey] = useState("default");
   const [showHistory, setShowHistory] = useState(false);
+  const [showListMenu, setShowListMenu] = useState(false);
+  const [editingListName, setEditingListName] = useState(null); // list id being renamed
+  const [listNameInput, setListNameInput] = useState("");
 
   // Multi-device realtime sync via Supabase
   const { syncConnected, lastSyncAt } = useRealtimeSync(activeListId, () => {
     reloadAll();
   });
+
+  // List management handlers
+  const handleCreateList = async () => {
+    const name = prompt("Nome da nova lista:");
+    if (!name || !name.trim()) return;
+    try {
+      const newList = await createList(name.trim());
+      setActiveListId(newList.id);
+      setShowListMenu(false);
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleRenameList = async (id) => {
+    const list = lists.find(l => l.id === id);
+    const newName = prompt("Renomear lista:", list?.name || "");
+    if (!newName || !newName.trim()) return;
+    try {
+      await renameList(id, newName.trim());
+      setEditingListName(null);
+    } catch (e) { setError(e.message); }
+  };
+
+  const handleDeleteList = async (id) => {
+    const list = lists.find(l => l.id === id);
+    if (!confirm(`Apagar a lista "${list?.name}" e todos os seus itens?`)) return;
+    try {
+      await deleteList(id);
+      setShowListMenu(false);
+    } catch (e) { setError(e.message); }
+  };
 
   const activeList = lists.find((l) => l.id === activeListId);
   const allItems = items || [];
@@ -530,20 +565,57 @@ export default function App() {
       <header className="header">
         <div className="header-left">
           <h1>🛒 Shopping List</h1>
-          {activeList && <div className="header-subtitle">{activeList.name}</div>}
+          {activeList && (
+            <div className="header-subtitle" onClick={() => handleRenameList(activeList.id)} title="Clique para renomear">
+              {activeList.name} ✏️
+            </div>
+          )}
         </div>
         <div className="header-right">
           <span className={`sync-indicator ${syncConnected ? "sync-connected" : "sync-disconnected"}`} title={syncConnected ? "Sincronização em tempo real ativa" : "Sem conexão em tempo real"}>
             {syncConnected ? "🟢" : "🟠"}
           </span>
+          <button className="header-list-btn" onClick={() => setShowListMenu(!showListMenu)} title="Gerir listas">
+            📋
+          </button>
           <button className="dark-toggle" onClick={toggleDark}>{isDark ? "☀️" : "🌙"}</button>
         </div>
       </header>
 
+      {/* List Management Dropdown */}
+      {showListMenu && (
+        <div className="list-menu-overlay" onClick={() => setShowListMenu(false)}>
+          <div className="list-menu" onClick={(e) => e.stopPropagation()}>
+            <div className="list-menu-header">
+              <span>As minhas listas</span>
+              <button className="list-menu-close" onClick={() => setShowListMenu(false)}>✕</button>
+            </div>
+            <div className="list-menu-items">
+              {lists.map(list => (
+                <div key={list.id} className={`list-menu-item ${list.id === activeListId ? "active" : ""}`}>
+                  <span className="list-menu-name" onClick={() => { setActiveListId(list.id); setShowListMenu(false); }}>
+                    {list.id === activeListId ? "● " : "○ "}{list.name}
+                  </span>
+                  <div className="list-menu-actions">
+                    <button className="list-menu-action" onClick={() => handleRenameList(list.id)} title="Renomear">✏️</button>
+                    {lists.length > 1 && (
+                      <button className="list-menu-action delete" onClick={() => handleDeleteList(list.id)} title="Apagar">🗑️</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <button className="list-menu-create" onClick={handleCreateList}>
+              ➕ Nova lista
+            </button>
+          </div>
+        </div>
+      )}
+
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
       <Toast message={toast} />
 
-      {lists.length > 1 && <ListTabs lists={lists} activeId={activeListId} onSelect={setActiveListId} />}
+      <ListTabs lists={lists} activeId={activeListId} onSelect={setActiveListId} onCreate={handleCreateList} />
 
       <AddItemForm onAdd={addItem} />
 
