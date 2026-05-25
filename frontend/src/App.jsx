@@ -50,6 +50,29 @@ function sortItems(items, sortKey) {
   }
 }
 
+function formatDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now - d;
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return "Hoje";
+  if (diffDays === 1) return "Ontem";
+  if (diffDays < 7) return `${diffDays} dias atrás`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)} sem. atrás`;
+  return d.toLocaleDateString("pt-PT", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+// ===== Toast =====
+function Toast({ message }) {
+  if (!message) return null;
+  return (
+    <div className="toast" role="status">
+      {message}
+    </div>
+  );
+}
+
 // ===== Error Banner =====
 function ErrorBanner({ error, onDismiss }) {
   if (!error) return null;
@@ -79,25 +102,15 @@ function AddItemForm({ onAdd }) {
       <div className="add-form-row">
         <div className="form-top">
           <input
-            type="text"
-            name="name"
-            placeholder="Adicionar item..."
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoComplete="off"
+            type="text" name="name" placeholder="Adicionar item..."
+            value={name} onChange={(e) => setName(e.target.value)} autoComplete="off"
           />
           <input
-            type="number"
-            name="quantity"
-            min="1"
-            max="999"
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.valueAsNumber || 1)}
+            type="number" name="quantity" min="1" max="999"
+            value={quantity} onChange={(e) => setQuantity(e.target.valueAsNumber || 1)}
           />
         </div>
-        <button type="submit" disabled={!name.trim()}>
-          ＋ Adicionar
-        </button>
+        <button type="submit" disabled={!name.trim()}>＋ Adicionar</button>
       </div>
     </form>
   );
@@ -108,31 +121,21 @@ function ItemCard({ item, onToggle, onDelete }) {
   const [justChecked, setJustChecked] = useState(false);
 
   const handleCheck = useCallback(() => {
-    haptic();
-    setJustChecked(true);
+    haptic(); setJustChecked(true);
     onToggle(item.id);
     setTimeout(() => setJustChecked(false), 600);
   }, [item.id, onToggle]);
 
-  const handleDelete = useCallback(() => {
-    haptic();
-    onDelete(item.id);
-  }, [item.id, onDelete]);
+  const handleDelete = useCallback(() => { haptic(); onDelete(item.id); }, [item.id, onDelete]);
 
   return (
     <div className={`item-card ${item.purchased ? "purchased" : ""} ${justChecked ? "just-purchased" : ""}`}>
-      <button
-        className={`item-check ${item.purchased ? "checked" : ""} ${justChecked ? "just-checked" : ""}`}
-        onClick={handleCheck}
-        aria-label={item.purchased ? "Desmarcar" : "Marcar como comprado"}
-      >
+      <button className={`item-check ${item.purchased ? "checked" : ""} ${justChecked ? "just-checked" : ""}`} onClick={handleCheck}>
         {item.purchased ? "✓" : ""}
       </button>
-      <div className="item-info">
-        <div className="item-name">{item.name}</div>
-      </div>
+      <div className="item-info"><div className="item-name">{item.name}</div></div>
       <span className="item-quantity-badge">{item.quantity}</span>
-      <button className="item-delete" onClick={handleDelete} aria-label="Apagar item">🗑</button>
+      <button className="item-delete" onClick={handleDelete} aria-label="Apagar">🗑</button>
     </div>
   );
 }
@@ -155,29 +158,18 @@ function SearchBar({ value, onChange }) {
   return (
     <div className="search-bar">
       <span className="search-icon">🔍</span>
-      <input
-        type="text"
-        placeholder="Pesquisar items..."
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      {value && (
-        <button className="search-clear" onClick={() => onChange("")}>✕</button>
-      )}
+      <input type="text" placeholder="Pesquisar items..." value={value} onChange={(e) => onChange(e.target.value)} />
+      {value && <button className="search-clear" onClick={() => onChange("")}>✕</button>}
     </div>
   );
 }
 
-// ===== Sort Bar (full width, below search) =====
+// ===== Sort Bar =====
 function SortBar({ value, onChange }) {
   return (
     <div className="sort-bar">
       {SORT_OPTIONS.map(opt => (
-        <button
-          key={opt.key}
-          className={`sort-chip ${opt.key === value ? "active" : ""}`}
-          onClick={() => onChange(opt.key)}
-        >
+        <button key={opt.key} className={`sort-chip ${opt.key === value ? "active" : ""}`} onClick={() => onChange(opt.key)}>
           {opt.label}
         </button>
       ))}
@@ -185,13 +177,167 @@ function SortBar({ value, onChange }) {
   );
 }
 
-// ===== Loading Spinner =====
-function LoadingSpinner() {
+// ===== Stats Panel =====
+function StatsPanel({ stats, expanded }) {
+  if (!stats) return null;
+  const total = parseInt(stats.total_count) || 0;
+  const purchased = parseInt(stats.purchased_count) || 0;
+  const active = parseInt(stats.active_count) || 0;
+  const pct = total > 0 ? Math.round((purchased / total) * 100) : 0;
+
   return (
-    <div className="loading">
-      <div className="spinner" />
+    <div className={`stats-panel ${expanded ? "expanded" : ""}`}>
+      <div className="stats-row">
+        <div className="stat-item">
+          <span className="stat-num">{active}</span>
+          <span className="stat-label">Por comprar</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-num">{purchased}</span>
+          <span className="stat-label">Comprados</span>
+        </div>
+        <div className="stat-item">
+          <span className="stat-num">{total}</span>
+          <span className="stat-label">Total</span>
+        </div>
+      </div>
+      <div className="stats-progress">
+        <div className="stats-progress-bar" style={{ width: `${pct}%` }} />
+      </div>
+      {expanded && (
+        <div className="stats-extra">
+          {parseInt(stats.unique_items_purchased) > 0 && (
+            <span>{stats.unique_items_purchased} items únicos comprados</span>
+          )}
+          {parseInt(stats.total_purchases) > 0 && (
+            <span>{stats.total_purchases} compras no total</span>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+// ===== History Panel =====
+function HistoryPanel({ history, onReAdd, onClose }) {
+  const [expanded, setExpanded] = useState(false);
+  const displayItems = expanded ? history : history.slice(0, 5);
+
+  if (!history || history.length === 0) {
+    return (
+      <div className="history-overlay" onClick={onClose}>
+        <div className="history-panel" onClick={(e) => e.stopPropagation()}>
+          <div className="history-header">
+            <h2>📊 Histórico</h2>
+            <button className="history-close" onClick={onClose}>✕</button>
+          </div>
+          <div className="history-empty">
+            <div className="icon">📋</div>
+            <p>Ainda não há items comprados.<br />Os items que compras aparecerão aqui.</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="history-overlay" onClick={onClose}>
+      <div className="history-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="history-header">
+          <h2>📊 Histórico</h2>
+          <button className="history-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="history-list">
+          {displayItems.map((h, i) => (
+            <div key={i} className="history-item">
+              <div className="history-info">
+                <div className="history-name">{h.name}</div>
+                <div className="history-meta">
+                  🕐 {formatDate(h.last_purchased_at)} · 🛒 {h.times_purchased}x comprado
+                </div>
+              </div>
+              <button className="history-readd" onClick={() => onReAdd(h.name, h.total_quantity / h.times_purchased || 1)}>
+                ＋
+              </button>
+            </div>
+          ))}
+          {history.length > 5 && (
+            <button className="history-expand" onClick={() => setExpanded(!expanded)}>
+              {expanded ? "▲ Mostrar menos" : `▼ Ver todos (${history.length})`}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== Export Menu =====
+function ExportMenu({ items, lists, activeListId }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const activeItems = items.filter(i => !i.purchased);
+  const purchasedItems = items.filter(i => i.purchased);
+  const listName = lists.find(l => l.id === activeListId)?.name || "Lista";
+
+  const formatListText = () => {
+    let text = `🛒 ${listName}\n\n`;
+    if (activeItems.length > 0) {
+      text += `📋 Por comprar (${activeItems.length}):\n`;
+      activeItems.forEach(i => { text += `  ☐ ${i.name} (${i.quantity})\n`; });
+    }
+    if (purchasedItems.length > 0) {
+      text += `\n✅ Comprados (${purchasedItems.length}):\n`;
+      purchasedItems.forEach(i => { text += `  ✓ ${i.name} (${i.quantity})\n`; });
+    }
+    text += `\n— ${new Date().toLocaleDateString("pt-PT")}`;
+    return text;
+  };
+
+  const handleShare = async () => {
+    const text = formatListText();
+    if (navigator.share) {
+      try { await navigator.share({ title: listName, text }); } catch { /* cancelled */ }
+    } else {
+      try { await navigator.clipboard.writeText(text); } catch { /* ignore */ }
+    }
+    setOpen(false);
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(formatListText());
+    } catch { /* ignore */ }
+    setOpen(false);
+  };
+
+  return (
+    <div className="export-menu" ref={ref}>
+      <button className="export-btn" onClick={() => setOpen(!open)} aria-label="Partilhar">
+        📤
+      </button>
+      {open && (
+        <div className="export-dropdown">
+          {typeof navigator.share === "function" && (
+            <button className="export-option" onClick={handleShare}>📱 Partilhar...</button>
+          )}
+          <button className="export-option" onClick={handleCopy}>📋 Copiar lista</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===== Loading =====
+function LoadingSpinner() {
+  return (<div className="loading"><div className="spinner" /></div>);
 }
 
 // ===== Empty State =====
@@ -199,20 +345,39 @@ function EmptyState({ hasSearch }) {
   if (hasSearch) {
     return (
       <div className="empty-state">
-        <div className="icon">🔍</div>
-        <h3>Sem resultados</h3>
-        <div className="empty-divider" />
-        <p>Nenhum item encontrado para a tua pesquisa.</p>
+        <div className="icon">🔍</div><h3>Sem resultados</h3>
+        <div className="empty-divider" /><p>Nenhum item encontrado para a tua pesquisa.</p>
       </div>
     );
   }
   return (
     <div className="empty-state">
-      <div className="icon">🛒</div>
-      <h3>A tua lista está vazia</h3>
-      <div className="empty-divider" />
-      <p>Adiciona itens usando o formulário acima.<br />Toca no 🗑 para apagar um item.</p>
+      <div className="icon">🛒</div><h3>A tua lista está vazia</h3>
+      <div className="empty-divider" /><p>Adiciona itens usando o formulário acima.</p>
     </div>
+  );
+}
+
+// ===== Toolbar =====
+function Toolbar({ searchQuery, setSearchQuery, sortKey, setSortKey, historyLen, onOpenHistory, onToggleStats, statsExpanded, items, lists, activeListId }) {
+  return (
+    <>
+      <div className="toolbar">
+        <SearchBar value={searchQuery} onChange={setSearchQuery} />
+        <div className="toolbar-row">
+          <SortBar value={sortKey} onChange={setSortKey} />
+          <div className="toolbar-actions">
+            {historyLen > 0 && (
+              <button className="toolbar-btn" onClick={onOpenHistory} title="Histórico">
+                📊 <span className="toolbar-badge">{historyLen}</span>
+              </button>
+            )}
+            <button className={`toolbar-btn ${statsExpanded ? "active" : ""}`} onClick={onToggleStats} title="Estatísticas">📈</button>
+            <ExportMenu items={items} lists={lists} activeListId={activeListId} />
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -231,23 +396,15 @@ function usePullToRefresh(listRef, onRefresh) {
     const el = listRef.current;
     if (!el || el.scrollTop !== 0) return;
     const dy = e.touches[0].clientY - startY.current;
-    if (dy > 0 && dy < 150) {
-      e.preventDefault();
-      setPtrState("pulling");
-      setPtrY(dy);
-    }
+    if (dy > 0 && dy < 150) { e.preventDefault(); setPtrState("pulling"); setPtrY(dy); }
   }, [listRef]);
 
   const handleTouchEnd = useCallback(async () => {
     if (ptrY > 70) {
-      setPtrState("refreshing");
-      setPtrY(60);
+      setPtrState("refreshing"); setPtrY(60);
       await onRefresh();
       setTimeout(() => { setPtrState("idle"); setPtrY(0); }, 300);
-    } else {
-      setPtrState("idle");
-      setPtrY(0);
-    }
+    } else { setPtrState("idle"); setPtrY(0); }
   }, [ptrY, onRefresh]);
 
   return { ptrState, ptrY, handleTouchStart, handleTouchMove, handleTouchEnd };
@@ -257,13 +414,16 @@ function usePullToRefresh(listRef, onRefresh) {
 export default function App() {
   const {
     lists, activeListId, setActiveListId,
-    items, loading, error, setError,
-    addItem, toggleItem, deleteItem, reloadItems,
+    items, history, stats,
+    loading, error, setError, toast,
+    addItem, toggleItem, deleteItem, reAddFromHistory, reloadAll,
   } = useShoppingList();
 
   const [isDark, toggleDark] = useDarkMode();
   const [searchQuery, setSearchQuery] = useState("");
   const [sortKey, setSortKey] = useState("default");
+  const [showHistory, setShowHistory] = useState(false);
+  const [statsExpanded, setStatsExpanded] = useState(true);
 
   const activeList = lists.find((l) => l.id === activeListId);
   const allItems = items || [];
@@ -276,13 +436,12 @@ export default function App() {
 
   const activeItemsRaw = filteredItems.filter(i => !i.purchased);
   const purchasedItemsRaw = filteredItems.filter(i => i.purchased);
-
   const activeItems = useMemo(() => sortItems(activeItemsRaw, sortKey), [activeItemsRaw, sortKey]);
   const purchasedItems = useMemo(() => sortItems(purchasedItemsRaw, sortKey), [purchasedItemsRaw, sortKey]);
 
   const listRef = useRef(null);
   const { ptrState, ptrY, handleTouchStart, handleTouchMove, handleTouchEnd } =
-    usePullToRefresh(listRef, () => reloadItems());
+    usePullToRefresh(listRef, () => reloadAll());
 
   if (loading) {
     return (
@@ -303,53 +462,46 @@ export default function App() {
           <h1>🛒 Shopping List</h1>
           {activeList && <div className="header-subtitle">{activeList.name}</div>}
         </div>
-        <button className="dark-toggle" onClick={toggleDark} aria-label="Alternar tema">
-          {isDark ? "☀️" : "🌙"}
-        </button>
+        <button className="dark-toggle" onClick={toggleDark}>{isDark ? "☀️" : "🌙"}</button>
       </header>
 
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
+      <Toast message={toast} />
 
-      {lists.length > 1 && (
-        <ListTabs lists={lists} activeId={activeListId} onSelect={setActiveListId} />
-      )}
+      {lists.length > 1 && <ListTabs lists={lists} activeId={activeListId} onSelect={setActiveListId} />}
 
       <AddItemForm onAdd={addItem} />
 
-      {/* Toolbar: Search + Sort below */}
-      <div className="toolbar">
-        <SearchBar value={searchQuery} onChange={setSearchQuery} />
-        <SortBar value={sortKey} onChange={setSortKey} />
-      </div>
+      <Toolbar
+        searchQuery={searchQuery} setSearchQuery={setSearchQuery}
+        sortKey={sortKey} setSortKey={setSortKey}
+        historyLen={history.length} onOpenHistory={() => setShowHistory(true)}
+        onToggleStats={() => setStatsExpanded(!statsExpanded)} statsExpanded={statsExpanded}
+        items={allItems} lists={lists} activeListId={activeListId}
+      />
 
-      <div
-        ref={listRef}
-        className="items-list"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
+      <StatsPanel stats={stats} expanded={statsExpanded} />
+
+      <div ref={listRef} className="items-list"
+        onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
         {ptrState !== "idle" && (
           <div className="ptr-indicator" style={{ opacity: Math.min(ptrY / 70, 1) }}>
             {ptrState === "refreshing" ? "⏳ A atualizar..." : ptrY > 70 ? "↗️ Soltar para atualizar" : "⬇️ Puxar para atualizar"}
           </div>
         )}
-
         {activeItems.length === 0 && purchasedItems.length === 0 && <EmptyState hasSearch={!!searchQuery.trim()} />}
-
-        {activeItems.map((item) => (
-          <ItemCard key={item.id} item={item} onToggle={toggleItem} onDelete={deleteItem} />
-        ))}
-
+        {activeItems.map((item) => <ItemCard key={item.id} item={item} onToggle={toggleItem} onDelete={deleteItem} />)}
         {purchasedItems.length > 0 && (
           <>
             <div className="divider">Comprados ✓</div>
-            {purchasedItems.map((item) => (
-              <ItemCard key={item.id} item={item} onToggle={toggleItem} onDelete={deleteItem} />
-            ))}
+            {purchasedItems.map((item) => <ItemCard key={item.id} item={item} onToggle={toggleItem} onDelete={deleteItem} />)}
           </>
         )}
       </div>
+
+      {showHistory && (
+        <HistoryPanel history={history} onReAdd={(name, qty) => { reAddFromHistory(name, Math.round(qty) || 1); }} onClose={() => setShowHistory(false)} />
+      )}
     </div>
   );
 }

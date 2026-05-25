@@ -79,8 +79,18 @@ async function initDb() {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS purchase_history (
+        id SERIAL PRIMARY KEY,
+        list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        quantity INTEGER NOT NULL DEFAULT 1,
+        purchased_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
       CREATE INDEX IF NOT EXISTS idx_items_list_id ON items(list_id);
       CREATE INDEX IF NOT EXISTS idx_items_purchased ON items(purchased);
+      CREATE INDEX IF NOT EXISTS idx_history_list_id ON purchase_history(list_id);
+      CREATE INDEX IF NOT EXISTS idx_history_name ON purchase_history(name);
     `);
 
     const result = await client.query("SELECT COUNT(*) as count FROM lists");

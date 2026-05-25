@@ -99,6 +99,15 @@ router.patch("/:itemId/toggle", async (req, res) => {
       "UPDATE items SET purchased = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
       [newStatus, itemId]
     );
+
+    // Record in history when marking as purchased
+    if (newStatus === true) {
+      await pool.query(
+        "INSERT INTO purchase_history (list_id, name, quantity) VALUES ($1, $2, $3)",
+        [listId, item.rows[0].name, item.rows[0].quantity]
+      );
+    }
+
     res.json(updated.rows[0]);
   } catch (e) {
     console.error(e);

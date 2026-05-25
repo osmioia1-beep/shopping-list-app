@@ -42,3 +42,11 @@ export const deleteItem = (listId, itemId) =>
   fetchJSON(`${API_BASE}/lists/${listId}/items/${itemId}`, {
     method: "DELETE",
   });
+
+// History
+export const getHistory = (listId) =>
+  fetchJSON(`${API_BASE}/lists/${listId}/history`);
+
+// Stats
+export const getStats = (listId) =>
+  fetchJSON(`${API_BASE}/lists/${listId}/stats`);

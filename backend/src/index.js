@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 import { pool, dbPromise } from "./db/database.js";
 import listsRouter from "./routes/lists.js";
 import itemsRouter from "./routes/items.js";
+import historyRouter from "./routes/history.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -18,6 +19,7 @@ app.use(express.json());
 // API routes
 app.use("/api/lists", listsRouter);
 app.use("/api/lists/:listId/items", itemsRouter);
+app.use("/api/lists", historyRouter);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === "production") {
