@@ -125,7 +125,10 @@ export function useShoppingList() {
       if (existingItem) {
         if (existingItem.purchased) {
           // Item exists but is purchased — uncheck it
-          await toggleItem(existingItem.id);
+          await toggleItem(activeListId, existingItem.id);
+          loadItems(activeListId);
+          loadHistory(activeListId);
+          loadStats(activeListId);
           showToast(`"${existingItem.name}" foi desmarcado.`);
         } else {
           // Item exists and is active — increment quantity
