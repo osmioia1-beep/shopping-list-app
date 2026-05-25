@@ -9,18 +9,22 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Create .env file
+      - name: Trigger Render deploy
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
         run: |
-          echo "RENDER_SERVICE_ID=${{ secrets.RENDER_SERVICE_ID }}" > .env
-          echo "RENDER_API_KEY=${{ secrets.RENDER_API_KEY }}" >> .env
-
-      - name: Deploy to Render
-        run: python3 scripts/deploy.py
+          echo "Triggering deploy for service: $RENDER_SERVICE_ID"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+            "https://api.render.com/v1/services/$RENDER_SERVICE_ID/deploys" \
+            -H "Authorization: Bearer $RENDER_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache": false}')
+          echo "HTTP response code: $HTTP_CODE"
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "Deploy triggered successfully!"
+            exit 0
+          else
+            echo "Failed to trigger deploy (HTTP $HTTP_CODE)"
+            exit 1
+          fi
