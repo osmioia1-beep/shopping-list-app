@@ -488,9 +488,19 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortKey, setSortKey] = useState("default");
   const [showHistory, setShowHistory] = useState(false);
-  const [showListMenu, setShowListMenu] = useState(false);
-  const [editingListName, setEditingListName] = useState(null); // list id being renamed
-  const [listNameInput, setListNameInput] = useState("");
+  const [showListDropdown, setShowListDropdown] = useState(false);
+  const listDropdownRef = useRef(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handler = (e) => {
+      if (listDropdownRef.current && !listDropdownRef.current.contains(e.target)) {
+        setShowListDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   // Multi-device realtime sync via Supabase
   const { syncConnected, lastSyncAt } = useRealtimeSync(activeListId, () => {
@@ -523,7 +533,14 @@ export default function App() {
     if (!confirm(`Apagar a lista "${list?.name}" e todos os seus itens?`)) return;
     try {
       await deleteList(id);
-      setShowListMenu(false);
+      setShowListDropdown(false);
+      // If we deleted the active list, switch to another one
+      if (id === activeListId) {
+        const remaining = lists.filter(l => l.id !== id);
+        if (remaining.length > 0) {
+          setActiveListId(remaining[0].id);
+        }
+      }
     } catch (e) { setError(e.message); }
   };
 
@@ -565,57 +582,46 @@ export default function App() {
       <header className="header">
         <div className="header-left">
           <h1>🛒 Shopping List</h1>
-          {activeList && (
-            <div className="header-subtitle" onClick={() => handleRenameList(activeList.id)} title="Clique para renomear">
-              {activeList.name} ✏️
-            </div>
-          )}
+          {/* List Dropdown */}
+          <div className="list-dropdown" ref={listDropdownRef}>
+            <button className="list-dropdown-trigger" onClick={() => setShowListDropdown(!showListDropdown)} title="Selecionar lista">
+              <span className="list-dropdown-name">{activeList?.name || "Selecionar lista"}</span>
+              <span className="list-dropdown-arrow">▾</span>
+            </button>
+            {showListDropdown && (
+              <div className="list-dropdown-menu">
+                <div className="list-dropdown-items">
+                  {lists.map(list => (
+                    <div key={list.id} className={`list-dropdown-item ${list.id === activeListId ? "active" : ""}`}>
+                      <span className="list-dropdown-item-name" onClick={() => { setActiveListId(list.id); setShowListDropdown(false); }}>
+                        {list.id === activeListId ? "● " : "○ "}{list.name}
+                      </span>
+                      <div className="list-dropdown-item-actions">
+                        <button className="list-dropdown-action" onClick={() => { setShowListDropdown(false); handleRenameList(list.id); }} title="Renomear">✏️</button>
+                        {lists.length > 1 && (
+                          <button className="list-dropdown-action delete" onClick={() => { setShowListDropdown(false); handleDeleteList(list.id); }} title="Apagar">🗑️</button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <button className="list-dropdown-create" onClick={() => { setShowListDropdown(false); handleCreateList(); }}>
+                  ➕ Nova lista
+                </button>
+              </div>
+            )}
+          </div>
         </div>
         <div className="header-right">
           <span className={`sync-indicator ${syncConnected ? "sync-connected" : "sync-disconnected"}`} title={syncConnected ? "Sincronização em tempo real ativa" : "Sem conexão em tempo real"}>
             {syncConnected ? "🟢" : "🟠"}
           </span>
-          <button className="header-list-btn" onClick={() => setShowListMenu(!showListMenu)} title="Gerir listas">
-            📋
-          </button>
           <button className="dark-toggle" onClick={toggleDark}>{isDark ? "☀️" : "🌙"}</button>
         </div>
       </header>
 
-      {/* List Management Dropdown */}
-      {showListMenu && (
-        <div className="list-menu-overlay" onClick={() => setShowListMenu(false)}>
-          <div className="list-menu" onClick={(e) => e.stopPropagation()}>
-            <div className="list-menu-header">
-              <span>As minhas listas</span>
-              <button className="list-menu-close" onClick={() => setShowListMenu(false)}>✕</button>
-            </div>
-            <div className="list-menu-items">
-              {lists.map(list => (
-                <div key={list.id} className={`list-menu-item ${list.id === activeListId ? "active" : ""}`}>
-                  <span className="list-menu-name" onClick={() => { setActiveListId(list.id); setShowListMenu(false); }}>
-                    {list.id === activeListId ? "● " : "○ "}{list.name}
-                  </span>
-                  <div className="list-menu-actions">
-                    <button className="list-menu-action" onClick={() => handleRenameList(list.id)} title="Renomear">✏️</button>
-                    {lists.length > 1 && (
-                      <button className="list-menu-action delete" onClick={() => handleDeleteList(list.id)} title="Apagar">🗑️</button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <button className="list-menu-create" onClick={handleCreateList}>
-              ➕ Nova lista
-            </button>
-          </div>
-        </div>
-      )}
-
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
       <Toast message={toast} />
-
-      <ListTabs lists={lists} activeId={activeListId} onSelect={setActiveListId} onCreate={handleCreateList} />
 
       <AddItemForm onAdd={addItem} />
 
