@@ -302,9 +302,71 @@ function ExportMenu({ items, lists, activeListId }) {
   };
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(formatListText());
-    } catch { /* ignore */ }
+    try { await navigator.clipboard.writeText(formatListText()); } catch { /* ignore */ }
+    setOpen(false);
+  };
+
+  const handlePDF = async () => {
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    let y = 20;
+
+    // Title
+    doc.setFontSize(20);
+    doc.text(`🛒 ${listName}`, pageWidth / 2, y, { align: "center" });
+    y += 12;
+
+    // Date
+    doc.setFontSize(10);
+    doc.setTextColor(120);
+    doc.text(new Date().toLocaleDateString("pt-PT", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }), pageWidth / 2, y, { align: "center" });
+    y += 10;
+
+    // Divider
+    doc.setDrawColor(200);
+    doc.line(20, y, pageWidth - 20, y);
+    y += 10;
+
+    // Active items
+    if (activeItems.length > 0) {
+      doc.setFontSize(14);
+      doc.setTextColor(30);
+      doc.text(`📋 Por comprar (${activeItems.length})`, 20, y);
+      y += 8;
+
+      doc.setFontSize(11);
+      activeItems.forEach(i => {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.text(`☐  ${i.name}  (${i.quantity})`, 25, y);
+        y += 7;
+      });
+      y += 5;
+    }
+
+    // Purchased items
+    if (purchasedItems.length > 0) {
+      if (y > 250) { doc.addPage(); y = 20; }
+      doc.setFontSize(14);
+      doc.setTextColor(30);
+      doc.text(`✅ Comprados (${purchasedItems.length})`, 20, y);
+      y += 8;
+
+      doc.setFontSize(11);
+      purchasedItems.forEach(i => {
+        if (y > 270) { doc.addPage(); y = 20; }
+        doc.text(`✓  ${i.name}  (${i.quantity})`, 25, y);
+        y += 7;
+      });
+    }
+
+    // Footer
+    y = Math.max(y + 10, 260);
+    doc.setFontSize(8);
+    doc.setTextColor(150);
+    doc.text("Shopping List — Gerado automaticamente", pageWidth / 2, y, { align: "center" });
+
+    doc.save(`${listName.replace(/\s+/g, "_")}.pdf`);
     setOpen(false);
   };
 
@@ -319,6 +381,7 @@ function ExportMenu({ items, lists, activeListId }) {
             <button className="export-option" onClick={handleShare}>📱 Partilhar...</button>
           )}
           <button className="export-option" onClick={handleCopy}>📋 Copiar lista</button>
+          <button className="export-option" onClick={handlePDF}>📄 Exportar PDF</button>
         </div>
       )}
     </div>
