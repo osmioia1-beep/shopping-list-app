@@ -312,15 +312,29 @@ function ExportMenu({ items, lists, activeListId }) {
     const pageWidth = doc.internal.pageSize.getWidth();
     let y = 20;
 
+    // Helper: strip emoji and normalize accented chars for PDF
+    const pdfSafe = (str) => {
+      // Remove emoji ranges
+      return str
+        .replace(/[\u{1F300}-\u{1F9FF}]/gu, '')
+        .replace(/[\u{2600}-\u{26FF}]/gu, '')
+        .replace(/[\u{2700}-\u{27BF}]/gu, '')
+        .replace(/[\u{FE00}-\u{FE0F}]/gu, '')
+        .replace(/\u2713/g, 'x')       // ✓ -> x
+        .replace(/\u2610/g, '[ ]')     // ☐ -> [ ]
+        .trim();
+    };
+
     // Title
     doc.setFontSize(20);
-    doc.text(`🛒 ${listName}`, pageWidth / 2, y, { align: "center" });
+    doc.text(pdfSafe(`Lista: ${listName}`), pageWidth / 2, y, { align: "center" });
     y += 12;
 
     // Date
     doc.setFontSize(10);
     doc.setTextColor(120);
-    doc.text(new Date().toLocaleDateString("pt-PT", { weekday: "long", day: "2-digit", month: "long", year: "numeric" }), pageWidth / 2, y, { align: "center" });
+    const dateStr = new Date().toLocaleDateString("pt-PT", { weekday: "long", day: "2-digit", month: "long", year: "numeric" });
+    doc.text(pdfSafe(dateStr), pageWidth / 2, y, { align: "center" });
     y += 10;
 
     // Divider
@@ -332,13 +346,13 @@ function ExportMenu({ items, lists, activeListId }) {
     if (activeItems.length > 0) {
       doc.setFontSize(14);
       doc.setTextColor(30);
-      doc.text(`📋 Por comprar (${activeItems.length})`, 20, y);
+      doc.text(`Por comprar (${activeItems.length})`, 20, y);
       y += 8;
 
       doc.setFontSize(11);
       activeItems.forEach(i => {
         if (y > 270) { doc.addPage(); y = 20; }
-        doc.text(`☐  ${i.name}  (${i.quantity})`, 25, y);
+        doc.text(`[ ]  ${pdfSafe(i.name)}  (${i.quantity})`, 25, y);
         y += 7;
       });
       y += 5;
@@ -349,13 +363,13 @@ function ExportMenu({ items, lists, activeListId }) {
       if (y > 250) { doc.addPage(); y = 20; }
       doc.setFontSize(14);
       doc.setTextColor(30);
-      doc.text(`✅ Comprados (${purchasedItems.length})`, 20, y);
+      doc.text(`Comprados (${purchasedItems.length})`, 20, y);
       y += 8;
 
       doc.setFontSize(11);
       purchasedItems.forEach(i => {
         if (y > 270) { doc.addPage(); y = 20; }
-        doc.text(`✓  ${i.name}  (${i.quantity})`, 25, y);
+        doc.text(`x   ${pdfSafe(i.name)}  (${i.quantity})`, 25, y);
         y += 7;
       });
     }
@@ -364,7 +378,7 @@ function ExportMenu({ items, lists, activeListId }) {
     y = Math.max(y + 10, 260);
     doc.setFontSize(8);
     doc.setTextColor(150);
-    doc.text("Shopping List — Gerado automaticamente", pageWidth / 2, y, { align: "center" });
+    doc.text("Shopping List - Gerado automaticamente", pageWidth / 2, y, { align: "center" });
 
     doc.save(`${listName.replace(/\s+/g, "_")}.pdf`);
     setOpen(false);
