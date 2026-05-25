@@ -5,3 +5,4 @@ backend/data/
 
 # Include built frontend for deployment
 !frontend/dist/
+frontend/dist/
