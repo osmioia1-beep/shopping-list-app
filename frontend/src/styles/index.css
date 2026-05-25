@@ -437,10 +437,6 @@ input {
   height: 100%; background: var(--success); border-radius: 2px;
   transition: width 0.4s ease;
 }
-.stats-extra {
-  display: flex; justify-content: center; gap: 16px;
-  margin-top: 8px; font-size: 0.7rem; color: var(--text-secondary);
-}
 
 /* ===== Export Menu ===== */
 .export-menu { position: relative; flex-shrink: 0; }

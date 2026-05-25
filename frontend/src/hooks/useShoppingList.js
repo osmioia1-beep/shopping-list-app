@@ -116,25 +116,31 @@ export function useShoppingList() {
   const handleAddItem = useCallback(async (name, quantity) => {
     if (!activeListId) return;
     try {
-      // Check for duplicate (case-insensitive, only in unpurchased items)
+      // Check for duplicate (case-insensitive)
       const normalizedName = name.trim().toLowerCase();
       const existingItem = items.find(
-        i => i.name.toLowerCase() === normalizedName && !i.purchased
+        i => i.name.toLowerCase() === normalizedName
       );
 
       if (existingItem) {
-        // Increment quantity instead of creating duplicate
-        const newQty = (existingItem.quantity || 1) + (quantity || 1);
-        await updateItem(activeListId, existingItem.id, { quantity: newQty });
-        loadItems(activeListId);
-        showToast(`"${existingItem.name}" já existe. Quantidade atualizada para ${newQty}.`);
+        if (existingItem.purchased) {
+          // Item exists but is purchased — uncheck it
+          await toggleItem(existingItem.id);
+          showToast(`"${existingItem.name}" foi desmarcado.`);
+        } else {
+          // Item exists and is active — increment quantity
+          const newQty = (existingItem.quantity || 1) + (quantity || 1);
+          await updateItem(activeListId, existingItem.id, { quantity: newQty });
+          loadItems(activeListId);
+          showToast(`"${existingItem.name}" já existe. Quantidade atualizada para ${newQty}.`);
+        }
         return;
       }
 
       const newItem = await addItem(activeListId, name, quantity);
       setItems((prev) => [...prev, newItem]);
     } catch (e) { setError(e.message); }
-  }, [activeListId, items]);
+  }, [activeListId, items, addItem, updateItem, toggleItem, loadItems, setError]);
 
   const handleToggleItem = useCallback(async (itemId) => {
     if (!activeListId) return;

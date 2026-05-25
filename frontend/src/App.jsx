@@ -178,7 +178,7 @@ function SortBar({ value, onChange }) {
 }
 
 // ===== Stats Panel =====
-function StatsPanel({ stats, expanded }) {
+function StatsPanel({ stats }) {
   if (!stats) return null;
   const total = parseInt(stats.total_count) || 0;
   const purchased = parseInt(stats.purchased_count) || 0;
@@ -186,7 +186,7 @@ function StatsPanel({ stats, expanded }) {
   const pct = total > 0 ? Math.round((purchased / total) * 100) : 0;
 
   return (
-    <div className={`stats-panel ${expanded ? "expanded" : ""}`}>
+    <div className="stats-panel">
       <div className="stats-row">
         <div className="stat-item">
           <span className="stat-num">{active}</span>
@@ -204,16 +204,6 @@ function StatsPanel({ stats, expanded }) {
       <div className="stats-progress">
         <div className="stats-progress-bar" style={{ width: `${pct}%` }} />
       </div>
-      {expanded && (
-        <div className="stats-extra">
-          {parseInt(stats.unique_items_purchased) > 0 && (
-            <span>{stats.unique_items_purchased} items únicos comprados</span>
-          )}
-          {parseInt(stats.total_purchases) > 0 && (
-            <span>{stats.total_purchases} compras no total</span>
-          )}
-        </div>
-      )}
     </div>
   );
 }
@@ -359,7 +349,7 @@ function EmptyState({ hasSearch }) {
 }
 
 // ===== Toolbar =====
-function Toolbar({ searchQuery, setSearchQuery, sortKey, setSortKey, historyLen, onOpenHistory, onToggleStats, statsExpanded, items, lists, activeListId }) {
+function Toolbar({ searchQuery, setSearchQuery, sortKey, setSortKey, onOpenHistory, items, lists, activeListId }) {
   return (
     <>
       <div className="toolbar">
@@ -367,12 +357,7 @@ function Toolbar({ searchQuery, setSearchQuery, sortKey, setSortKey, historyLen,
         <div className="toolbar-row">
           <SortBar value={sortKey} onChange={setSortKey} />
           <div className="toolbar-actions">
-            {historyLen > 0 && (
-              <button className="toolbar-btn" onClick={onOpenHistory} title="Histórico">
-                📊 <span className="toolbar-badge">{historyLen}</span>
-              </button>
-            )}
-            <button className={`toolbar-btn ${statsExpanded ? "active" : ""}`} onClick={onToggleStats} title="Estatísticas">📈</button>
+            <button className="toolbar-btn" onClick={onOpenHistory} title="Histórico">📊</button>
             <ExportMenu items={items} lists={lists} activeListId={activeListId} />
           </div>
         </div>
@@ -423,7 +408,6 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [sortKey, setSortKey] = useState("default");
   const [showHistory, setShowHistory] = useState(false);
-  const [statsExpanded, setStatsExpanded] = useState(true);
 
   const activeList = lists.find((l) => l.id === activeListId);
   const allItems = items || [];
@@ -475,12 +459,11 @@ export default function App() {
       <Toolbar
         searchQuery={searchQuery} setSearchQuery={setSearchQuery}
         sortKey={sortKey} setSortKey={setSortKey}
-        historyLen={history.length} onOpenHistory={() => setShowHistory(true)}
-        onToggleStats={() => setStatsExpanded(!statsExpanded)} statsExpanded={statsExpanded}
+        onOpenHistory={() => setShowHistory(true)}
         items={allItems} lists={lists} activeListId={activeListId}
       />
 
-      <StatsPanel stats={stats} expanded={statsExpanded} />
+      <StatsPanel stats={stats} />
 
       <div ref={listRef} className="items-list"
         onTouchStart={handleTouchStart} onTouchMove={handleTouchMove} onTouchEnd={handleTouchEnd}>
