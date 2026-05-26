@@ -132,11 +132,14 @@ input {
 
 .dark-toggle {
   width: 36px; height: 36px; border-radius: 50%;
-  background: rgba(255,255,255,0.2); color: white;
+  background: rgba(255,255,255,0.15); color: white;
   display: flex; align-items: center; justify-content: center;
-  font-size: 1.1rem; flex-shrink: 0; transition: background 0.2s;
+  flex-shrink: 0; transition: background 0.2s;
+  cursor: pointer;
 }
+.dark-toggle:hover { background: rgba(255,255,255,0.25); }
 .dark-toggle:active { background: rgba(255,255,255,0.3); }
+.dark-toggle svg { stroke: white; }
 
 .header-right {
   display: flex;
@@ -164,6 +167,58 @@ input {
 @keyframes syncPulse {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 0.8; }
+}
+
+/* ===== Header Action Buttons ===== */
+.header-action-btn {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: rgba(255,255,255,0.15); color: white;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0; /* hide text if any */
+  flex-shrink: 0; transition: background 0.2s;
+  cursor: pointer;
+}
+.header-action-btn:hover { background: rgba(255,255,255,0.25); }
+.header-action-btn:active { background: rgba(255,255,255,0.3); }
+.header-action-btn svg {
+  width: 18px; height: 18px;
+  stroke: white;
+}
+
+/* ===== Export Menu ===== */
+.export-menu {
+  position: relative;
+}
+.export-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 300;
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--border);
+  min-width: 180px;
+  animation: dropdownIn 0.15s ease;
+  overflow: hidden;
+}
+.export-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  color: var(--text);
+  font-size: 0.875rem;
+  cursor: pointer;
+  transition: background 0.15s;
+  text-align: left;
+}
+.export-option:hover { background: var(--gray-100); }
+.export-option svg {
+  flex-shrink: 0;
+  color: var(--text-secondary);
 }
 
 /* ===== List Dropdown ===== */
@@ -538,28 +593,23 @@ input {
   to { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
-/* ===== Toolbar Row (sort + actions) ===== */
-.toolbar-row {
-  display: flex; align-items: center; gap: 8px;
+/* ===== Sort Bar ===== */
+.sort-bar {
+  display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px;
+  scrollbar-width: none;
 }
-.toolbar-actions {
-  display: flex; align-items: center; gap: 4px; flex-shrink: 0;
-}
-.toolbar-btn {
-  width: 36px; height: 36px; border-radius: 50%;
-  background: var(--bg); border: 1.5px solid var(--border);
-  display: flex; align-items: center; justify-content: center;
-  font-size: 1rem; position: relative;
+.sort-bar::-webkit-scrollbar { display: none; }
+
+.sort-chip {
+  flex-shrink: 0; padding: 6px 14px; border-radius: 16px;
+  font-size: 0.8rem; font-weight: 500;
+  background: var(--bg); color: var(--gray-600);
+  border: 1.5px solid var(--border);
   transition: all 0.15s;
 }
-.toolbar-btn:active { border-color: var(--primary); }
-.toolbar-btn.active { background: var(--primary-light); border-color: var(--primary); }
-.toolbar-badge {
-  position: absolute; top: -4px; right: -4px;
-  background: var(--primary); color: white;
-  font-size: 0.6rem; font-weight: 700;
-  width: 16px; height: 16px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
+.sort-chip.active {
+  background: var(--primary-light); color: var(--primary);
+  border-color: var(--primary);
 }
 
 /* ===== Stats Panel ===== */
