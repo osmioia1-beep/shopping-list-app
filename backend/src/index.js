@@ -20,22 +20,22 @@ app.use(express.json());
 // Auth middleware for all API routes
 app.use("/api", authenticateToken);
 
-// User creation endpoint (must be AFTER auth middleware — user must be logged in)
-// This is called after Supabase signup to create the user in our database
-app.post("/api/users", async (req, res) => {
+// Get current user profile — auto-creates user in our DB on first login
+app.get("/api/users/me", async (req, res) => {
   try {
-    const { id, email } = req.body;
-    if (!id || !email) {
-      return res.status(400).json({ error: "id and email are required" });
-    }
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+    // Upsert: create if not exists, return existing otherwise
     const result = await pool.query(
-      "INSERT INTO users (id, email) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET email = $2 RETURNING *",
-      [id, email]
+      `INSERT INTO users (id, email) VALUES ($1, $2)
+       ON CONFLICT (id) DO UPDATE SET email = $2, updated_at = NOW()
+       RETURNING *`,
+      [userId, userEmail]
     );
-    res.status(201).json(result.rows[0]);
+    res.json(result.rows[0]);
   } catch (e) {
-    console.error("User creation error:", e);
-    res.status(500).json({ error: "Failed to create user" });
+    console.error("Get/create user error:", e);
+    res.status(500).json({ error: "Failed to get user profile" });
   }
 });
 

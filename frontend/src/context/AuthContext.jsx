@@ -19,6 +19,24 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Ensure user exists in our database (auto-create on first login)
+  const ensureUserInDb = async (token) => {
+    try {
+      const res = await fetch("/api/users/me", {
+        headers: { "Authorization": `Bearer ${token}` },
+      });
+      if (res.ok) {
+        return true;
+      }
+      const body = await res.json().catch(() => ({}));
+      console.error("Failed to ensure user in DB:", body.error || res.status);
+      return false;
+    } catch (e) {
+      console.error("ensureUserInDb error:", e);
+      return false;
+    }
+  };
+
   // Fetch the user session on mount
   useEffect(() => {
     const loadUser = async () => {
@@ -26,6 +44,8 @@ export const AuthProvider = ({ children }) => {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           setUser(session.user);
+          // Auto-create user in DB on first confirmed login
+          await ensureUserInDb(session.access_token);
         }
       } catch (err) {
         console.error('Error fetching session:', err);
@@ -41,6 +61,10 @@ export const AuthProvider = ({ children }) => {
       async (event, session) => {
         if (session) {
           setUser(session.user);
+          // Auto-create user in DB on sign-in (handles email confirmation flow)
+          if (event === 'SIGNED_IN') {
+            await ensureUserInDb(session.access_token);
+          }
         } else {
           setUser(null);
         }
@@ -68,29 +92,13 @@ export const AuthProvider = ({ children }) => {
     try {
       const result = await authService.signUp(email, password);
       if (result.error) throw result.error;
-      // Create user in our database via backend API
-      if (result.session) {
-        try {
-          const apiRes = await fetch("/api/users", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              "Authorization": `Bearer ${result.session.access_token}`,
-            },
-            body: JSON.stringify({
-              id: result.user.id,
-              email: result.user.email,
-            }),
-          });
-          if (!apiRes.ok) {
-            console.error("Failed to create user in DB:", await apiRes.text());
-          }
-        } catch (e) {
-          console.error("User DB creation error:", e);
-        }
+      // With email confirmation enabled, session is null until user confirms.
+      // Return needsConfirmation flag so UI can show "check your email".
+      const needsConfirmation = !result.session;
+      if (!needsConfirmation) {
+        setUser(result.user);
       }
-      setUser(result.user);
-      return { success: true, data: result };
+      return { success: true, data: result, needsConfirmation };
     } catch (error) {
       return { success: false, error };
     }
