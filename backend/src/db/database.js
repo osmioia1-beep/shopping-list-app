@@ -1,12 +1,11 @@
 import pg from "pg";
 import dotenv from "dotenv";
-dotenv.config(); // Load environment variables from .env file
+import dns from "dns/promises";
+dotenv.config();
 
 const { Pool } = pg;
 
 async function createPool() {
-  // Use DATABASE_URL from .env directly — it already contains the correct
-  // pooler host, project-ref user, password, and port.
   const connectionString = process.env.DATABASE_URL;
 
   if (!connectionString) {
@@ -14,10 +13,30 @@ async function createPool() {
     process.exit(1);
   }
 
-  console.log("Connecting to database...");
+  // Parse the connection string to get the hostname
+  const dbUrl = new URL(connectionString);
+  const originalHost = dbUrl.hostname;
+
+  // Resolve hostname to IPv4 (Render's network may not support IPv6)
+  let resolvedHost = originalHost;
+  try {
+    const addresses = await dns.resolve4(originalHost);
+    if (addresses.length > 0) {
+      resolvedHost = addresses[0];
+      console.log(`DNS resolved ${originalHost} -> ${resolvedHost}`);
+    }
+  } catch (e) {
+    console.log("IPv4 DNS resolution failed, using hostname as-is:", e.message);
+  }
+
+  // Rebuild connection string with resolved IPv4 address
+  dbUrl.hostname = resolvedHost;
+  const resolvedConnectionString = dbUrl.toString();
+
+  console.log("Connecting to database via:", resolvedHost);
 
   const pool = new Pool({
-    connectionString,
+    connectionString: resolvedConnectionString,
     ssl: { rejectUnauthorized: false },
   });
 
