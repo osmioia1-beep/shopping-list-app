@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { Login } from './Login.jsx';
+import { Signup } from './Signup.jsx';
 import App from '../App.jsx';
 
 export default function MainApp() {
-  const { user, loading } = useAuth();
+  const { user, loading, logout } = useAuth();
+  const [authView, setAuthView] = useState('login');
 
   if (loading) {
     return (
@@ -15,8 +17,11 @@ export default function MainApp() {
   }
 
   if (!user) {
-    return <Login />;
+    if (authView === 'signup') {
+      return <Signup onBackToLogin={() => setAuthView('login')} />;
+    }
+    return <Login onSignup={() => setAuthView('signup')} />;
   }
 
-  return <App />;
+  return <App onLogout={logout} />;
 }
