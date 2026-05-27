@@ -17,7 +17,14 @@ export function Signup({ onBackToLogin }) {
       }
       // On success, auth context updates user → MainApp shows App
     } catch (err) {
-      setError('Erro ao criar conta. Tenta novamente.');
+      const msg = err?.error_description || err?.message || '';
+      if (msg.includes('rate limit')) {
+        setError('Muitas tentativas. Aguarda uns minutos e tenta de novo.');
+      } else if (msg.includes('already registered') || msg.includes('already exists')) {
+        setError('Este email já tem conta. Faz login.');
+      } else {
+        setError(msg || 'Erro ao criar conta. Tenta novamente.');
+      }
       console.error('Signup error:', err);
     }
   };

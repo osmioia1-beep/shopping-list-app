@@ -66,11 +66,31 @@ export const AuthProvider = ({ children }) => {
   // Signup function
   const signup = async (email, password) => {
     try {
-      const { data, error } = await authService.signUp(email, password);
-      if (error) throw error;
-      // Note: with Supabase, signUp sends a confirmation email by default
-      setUser(data.user);
-      return { success: true, data };
+      const result = await authService.signUp(email, password);
+      if (result.error) throw result.error;
+      // Create user in our database via backend API
+      if (result.session) {
+        try {
+          const apiRes = await fetch("/api/users", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${result.session.access_token}`,
+            },
+            body: JSON.stringify({
+              id: result.user.id,
+              email: result.user.email,
+            }),
+          });
+          if (!apiRes.ok) {
+            console.error("Failed to create user in DB:", await apiRes.text());
+          }
+        } catch (e) {
+          console.error("User DB creation error:", e);
+        }
+      }
+      setUser(result.user);
+      return { success: true, data: result };
     } catch (error) {
       return { success: false, error };
     }

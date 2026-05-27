@@ -20,6 +20,25 @@ app.use(express.json());
 // Auth middleware for all API routes
 app.use("/api", authenticateToken);
 
+// User creation endpoint (must be AFTER auth middleware — user must be logged in)
+// This is called after Supabase signup to create the user in our database
+app.post("/api/users", async (req, res) => {
+  try {
+    const { id, email } = req.body;
+    if (!id || !email) {
+      return res.status(400).json({ error: "id and email are required" });
+    }
+    const result = await pool.query(
+      "INSERT INTO users (id, email) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET email = $2 RETURNING *",
+      [id, email]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (e) {
+    console.error("User creation error:", e);
+    res.status(500).json({ error: "Failed to create user" });
+  }
+});
+
 // API routes
 app.use("/api/lists", listsRouter);
 app.use("/api/lists/:listId/items", itemsRouter);
