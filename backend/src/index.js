@@ -3,6 +3,7 @@ import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
 import { pool, dbPromise } from "./db/database.js";
+import { authenticateToken, authorizeListAccess } from "./middleware/auth.js";
 import listsRouter from "./routes/lists.js";
 import itemsRouter from "./routes/items.js";
 import historyRouter from "./routes/history.js";
@@ -15,6 +16,9 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Auth middleware for all API routes
+app.use("/api", authenticateToken);
 
 // API routes
 app.use("/api/lists", listsRouter);

@@ -1,17 +1,50 @@
 import { Router } from "express";
 import { pool } from "../db/database.js";
+import { authenticateToken } from "../middleware/auth.js";
 
 const router = Router({ mergeParams: true });
+
+// Apply authentication to all routes
+router.use(authenticateToken);
+
+// Middleware to check list access and attach user's role for the list
+router.use(async (req, res, next) => {
+  try {
+    const { listId } = req.params;
+    const userId = req.user.id;
+
+    // Check if user is a member of the list (includes owner)
+    const memberResult = await pool.query(
+      `SELECT role FROM list_members WHERE list_id = $1 AND user_id = $2`,
+      [listId, userId]
+    );
+
+    if (memberResult.rows.length === 0) {
+      // If not a member, check if the user is the owner (though owner should be in list_members)
+      const ownerResult = await pool.query(
+        `SELECT owner_id FROM lists WHERE id = $1`,
+        [listId]
+      );
+      if (ownerResult.rows.length === 0 || ownerResult.rows[0].owner_id !== userId) {
+        return res.status(403).json({ error: 'Access denied to this list' });
+      }
+      // If owner but not in list_members, we can still allow access and treat as owner
+      req.listRole = 'owner';
+    } else {
+      req.listRole = memberResult.rows[0].role;
+    }
+
+    next();
+  } catch (err) {
+    console.error('List access check error:', err);
+    return res.status(500).json({ error: 'Access check failed' });
+  }
+});
 
 // Get all items for a list
 router.get("/", async (req, res) => {
   const { listId } = req.params;
   try {
-    const list = await pool.query("SELECT * FROM lists WHERE id = $1", [listId]);
-    if (list.rows.length === 0) {
-      return res.status(404).json({ error: "List not found" });
-    }
-
     // Get items: unpurchased first (alphabetical), then purchased (alphabetical)
     const items = await pool.query(
       `SELECT * FROM items
@@ -36,11 +69,6 @@ router.post("/", async (req, res) => {
   }
 
   try {
-    const list = await pool.query("SELECT * FROM lists WHERE id = $1", [listId]);
-    if (list.rows.length === 0) {
-      return res.status(404).json({ error: "List not found" });
-    }
-
     const qty = Math.max(1, parseInt(quantity) || 1);
     const result = await pool.query(
       "INSERT INTO items (list_id, name, quantity) VALUES ($1, $2, $3) RETURNING *",
@@ -120,14 +148,6 @@ router.delete("/:itemId", async (req, res) => {
   const { listId, itemId } = req.params;
 
   try {
-    const item = await pool.query(
-      "SELECT * FROM items WHERE id = $1 AND list_id = $2",
-      [itemId, listId]
-    );
-    if (item.rows.length === 0) {
-      return res.status(404).json({ error: "Item not found" });
-    }
-
     await pool.query("DELETE FROM items WHERE id = $1 AND list_id = $2", [itemId, listId]);
     res.json({ success: true, id: parseInt(itemId) });
   } catch (e) {

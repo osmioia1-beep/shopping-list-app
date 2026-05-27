@@ -708,3 +708,94 @@ input {
 }
 .history-empty .icon { font-size: 2.5rem; margin-bottom: 12px; }
 .history-empty p { font-size: 0.9rem; line-height: 1.5; }
+
+/* ===== Login / Signup ===== */
+.login-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  background: var(--bg);
+}
+.login-box {
+  width: 100%;
+  max-width: 400px;
+  padding: 32px 24px;
+  background: var(--bg-elevated);
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.1);
+}
+.login-box h2 {
+  text-align: center;
+  margin-bottom: 24px;
+  font-size: 1.4rem;
+  color: var(--text);
+}
+.login-error {
+  background: var(--danger-light);
+  color: var(--danger);
+  padding: 10px 14px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+  text-align: center;
+}
+.login-form .form-group {
+  margin-bottom: 16px;
+}
+.login-form label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.login-form input[type="email"],
+.login-form input[type="password"],
+.login-form input[type="text"] {
+  width: 100%;
+  padding: 12px 14px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  font-size: 1rem;
+  background: var(--bg);
+  color: var(--text);
+  transition: border-color 0.2s;
+}
+.login-form input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+.login-button {
+  width: 100%;
+  padding: 14px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s;
+  margin-top: 8px;
+}
+.login-button:hover { background: var(--primary-dark); }
+.login-button:disabled { opacity: 0.6; cursor: not-allowed; }
+.login-footer {
+  text-align: center;
+  margin-top: 20px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.link-button {
+  background: none;
+  border: none;
+  color: var(--primary);
+  font-size: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+}
+.link-button:hover { color: var(--primary-dark); }

@@ -1,15 +1,41 @@
+import { supabase } from "./supabase.js";
+
 const API_BASE = "/api";
 
 async function fetchJSON(url, options = {}) {
+  // Get the current Supabase session to extract the JWT
+  const { data: { session } } = await supabase.auth.getSession();
+  const token = session?.access_token;
+
+  const headers = {
+    "Content-Type": "application/json",
+    ...(options.headers || {}),
+  };
+
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
   const res = await fetch(url, {
-    headers: { "Content-Type": "application/json" },
+    headers,
     ...options,
   });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "Unknown error" }));
-    throw new Error(err.error || `HTTP ${res.status}`);
+
+  // Handle non-JSON responses (e.g., error pages)
+  const contentType = res.headers.get("content-type");
+  if (!contentType || !contentType.includes("application/json")) {
+    const text = await res.text();
+    throw new Error(`HTTP ${res.status}: ${text}`);
   }
-  return res.json();
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    // The server returns JSON with an error field
+    throw new Error(data.error || `HTTP ${res.status}`);
+  }
+
+  return data;
 }
 
 // Lists
@@ -46,6 +72,11 @@ export const deleteItem = (listId, itemId) =>
 // History
 export const getHistory = (listId) =>
   fetchJSON(`${API_BASE}/lists/${listId}/history`);
+export const addToHistory = (listId, name, quantity) =>
+  fetchJSON(`${API_BASE}/lists/${listId}/history`, {
+    method: "POST",
+    body: JSON.stringify({ name, quantity }),
+  });
 
 // Stats
 export const getStats = (listId) =>

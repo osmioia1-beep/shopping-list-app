@@ -1,43 +1,26 @@
 import pg from "pg";
-import { URL } from "url";
-import dns from "dns/promises";
+import dotenv from "dotenv";
+dotenv.config(); // Load environment variables from .env file
+
 const { Pool } = pg;
 
 async function createPool() {
-  const dbUrl = new URL(process.env.DATABASE_URL || "");
-  
-  console.log("DATABASE_URL is set:", !!process.env.DATABASE_URL);
-  console.log("Original hostname:", dbUrl.hostname);
+  // Use DATABASE_URL from .env directly — it already contains the correct
+  // pooler host, project-ref user, password, and port.
+  const connectionString = process.env.DATABASE_URL;
 
-  // Try Supavisor pooler hostname for eu-west-1
-  // Pooler format: aws-0-{region}.pooler.supabase.com
-  const poolerHost = "aws-0-eu-west-1.pooler.supabase.com";
-  
-  // Resolve pooler hostname to IPv4
-  let resolvedHost = poolerHost;
-  try {
-    const addresses = await dns.resolve4(poolerHost);
-    if (addresses.length > 0) {
-      resolvedHost = addresses[0];
-      console.log(`Pooler DNS resolved ${poolerHost} -> ${resolvedHost}`);
-    }
-  } catch (e) {
-    console.log("Pooler DNS resolution failed, using hostname as-is:", e.message);
+  if (!connectionString) {
+    console.error("DATABASE_URL is not set in .env!");
+    process.exit(1);
   }
 
-  // Build connection string with pooler host and port 6543
-  // Note: pooler requires project ref in username: postgres.[project-ref]
-  const projectRef = "lfatskduuzwdqoomtphh";
-  const poolerUser = `postgres.${projectRef}`;
-  const connectionString = `postgresql://${poolerUser}:${dbUrl.password}@${resolvedHost}:6543/postgres`;
-  
-  console.log("Connecting via pooler to:", `postgresql://${poolerUser}:****@${resolvedHost}:6543/postgres`);
+  console.log("Connecting to database...");
 
   const pool = new Pool({
     connectionString,
     ssl: { rejectUnauthorized: false },
   });
-  
+
   return pool;
 }
 
@@ -57,58 +40,237 @@ async function initDb() {
     throw err;
   }
 
-  // Create tables
+  // Migrate database schema
   const client = await pool.connect();
   try {
+    // Step 1: Create new tables (users first, since lists references it)
     await client.query(`
-      CREATE TABLE IF NOT EXISTS lists (
-        id SERIAL PRIMARY KEY,
-        name TEXT NOT NULL,
+      CREATE TABLE IF NOT EXISTS users (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        email TEXT UNIQUE NOT NULL,
+        name TEXT,
+        avatar_url TEXT,
         created_at TIMESTAMPTZ DEFAULT NOW(),
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
+    `);
 
-      CREATE TABLE IF NOT EXISTS items (
+    // Step 2: Add missing columns to existing tables (idempotent)
+    await client.query(`
+      DO $$
+      BEGIN
+        -- Add owner_id to lists if missing
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='lists' AND column_name='owner_id') THEN
+          ALTER TABLE lists ADD COLUMN owner_id UUID REFERENCES users(id) ON DELETE CASCADE;
+        END IF;
+        -- Add created_by to items if missing
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='items' AND column_name='created_by') THEN
+          ALTER TABLE items ADD COLUMN created_by UUID REFERENCES users(id) ON DELETE SET NULL;
+        END IF;
+      END $$;
+    `);
+
+    // Step 3: Create list_members table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS list_members (
         id SERIAL PRIMARY KEY,
         list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
-        name TEXT NOT NULL,
-        quantity INTEGER NOT NULL DEFAULT 1,
-        purchased BOOLEAN NOT NULL DEFAULT false,
-        sort_order INTEGER NOT NULL DEFAULT 0,
-        created_at TIMESTAMPTZ DEFAULT NOW(),
-        updated_at TIMESTAMPTZ DEFAULT NOW()
+        user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK (role IN ('owner', 'editor', 'viewer')) DEFAULT 'editor',
+        joined_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(list_id, user_id)
       );
+    `);
 
-      CREATE TABLE IF NOT EXISTS purchase_history (
-        id SERIAL PRIMARY KEY,
-        list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
-        name TEXT NOT NULL,
-        quantity INTEGER NOT NULL DEFAULT 1,
-        purchased_at TIMESTAMPTZ DEFAULT NOW()
-      );
+    // Step 4: Backfill legacy data — create a legacy user and assign existing lists to it
+    const listResult = await client.query("SELECT COUNT(*) as count FROM lists WHERE owner_id IS NULL");
+    if (parseInt(listResult.rows[0].count) > 0) {
+      // Create legacy user
+      await client.query(`
+        INSERT INTO users (id, email, name)
+        VALUES ('00000000-0000-0000-0000-000000000000', 'legacy@local', 'Legacy User')
+        ON CONFLICT (id) DO NOTHING;
+      `);
+      // Assign orphan lists to legacy user
+      await client.query(`
+        UPDATE lists SET owner_id = '00000000-0000-0000-0000-000000000000' WHERE owner_id IS NULL;
+      `);
+      // Create list_members entries for legacy user
+      await client.query(`
+        INSERT INTO list_members (list_id, user_id, role)
+        SELECT id, '00000000-0000-0000-0000-000000000000', 'owner'
+        FROM lists
+        ON CONFLICT DO NOTHING;
+      `);
+      console.log("Backfilled legacy lists with owner_id");
+    }
 
-      CREATE INDEX IF NOT EXISTS idx_items_list_id ON items(list_id);
-      CREATE INDEX IF NOT EXISTS idx_items_purchased ON items(purchased);
-      CREATE INDEX IF NOT EXISTS idx_history_list_id ON purchase_history(list_id);
-      CREATE INDEX IF NOT EXISTS idx_history_name ON purchase_history(name);
+    // Step 5: Now that schema is ready, set up RLS
+    // Enable RLS on all tables
+    await client.query(`
+      ALTER TABLE lists ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE items ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE purchase_history ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+      ALTER TABLE list_members ENABLE ROW LEVEL SECURITY;
+    `);
 
-      -- Enable Realtime: REPLICA IDENTITY FULL required for UPDATE/DELETE events
+    // Drop existing policies first (idempotent) then recreate
+    await client.query(`
+      DROP POLICY IF EXISTS "Users can view lists they own or are members of" ON lists;
+      DROP POLICY IF EXISTS "Users can insert lists as owner" ON lists;
+      DROP POLICY IF EXISTS "Users can update lists they own" ON lists;
+      DROP POLICY IF EXISTS "Users can delete lists they own" ON lists;
+      DROP POLICY IF EXISTS "Users can view items in lists they own or are members of" ON items;
+      DROP POLICY IF EXISTS "Users can insert items in lists they own or can edit" ON items;
+      DROP POLICY IF EXISTS "Users can update items in lists they own or can edit" ON items;
+      DROP POLICY IF EXISTS "Users can delete items in lists they own or can edit" ON items;
+      DROP POLICY IF EXISTS "Users can view purchase history in lists they own or are members of" ON purchase_history;
+      DROP POLICY IF EXISTS "Users can insert purchase history in lists they own or can edit" ON purchase_history;
+      DROP POLICY IF EXISTS "Users can view their own data" ON users;
+      DROP POLICY IF EXISTS "Users can update their own data" ON users;
+      DROP POLICY IF EXISTS "Users can view list members for lists they own or are members of" ON list_members;
+      DROP POLICY IF EXISTS "Users can insert list members as owner" ON list_members;
+      DROP POLICY IF EXISTS "Users can update list members as owner" ON list_members;
+      DROP POLICY IF EXISTS "Users can delete list members as owner" ON list_members;
+    `);
+
+    // Create policies
+    await client.query(`
+      CREATE POLICY "Users can view lists they own or are members of" ON lists
+        FOR SELECT
+        USING (
+          owner_id = auth.uid() OR
+          EXISTS (SELECT 1 FROM list_members WHERE list_id = lists.id AND user_id = auth.uid())
+        );
+
+      CREATE POLICY "Users can insert lists as owner" ON lists
+        FOR INSERT WITH CHECK (owner_id = auth.uid());
+
+      CREATE POLICY "Users can update lists they own" ON lists
+        FOR UPDATE USING (owner_id = auth.uid());
+
+      CREATE POLICY "Users can delete lists they own" ON lists
+        FOR DELETE USING (owner_id = auth.uid());
+
+      CREATE POLICY "Users can view items in lists they own or are members of" ON items
+        FOR SELECT
+        USING (
+          EXISTS (
+            SELECT 1 FROM lists WHERE lists.id = items.list_id AND (
+              lists.owner_id = auth.uid() OR
+              EXISTS (SELECT 1 FROM list_members WHERE list_id = lists.id AND user_id = auth.uid())
+            )
+          )
+        );
+
+      CREATE POLICY "Users can insert items in lists they own or can edit" ON items
+        FOR INSERT
+        WITH CHECK (
+          EXISTS (
+            SELECT 1 FROM lists WHERE lists.id = items.list_id AND (
+              lists.owner_id = auth.uid() OR
+              EXISTS (SELECT 1 FROM list_members WHERE list_id = lists.id AND user_id = auth.uid() AND role IN ('owner', 'editor'))
+            )
+          )
+        );
+
+      CREATE POLICY "Users can update items in lists they own or can edit" ON items
+        FOR UPDATE
+        USING (
+          EXISTS (
+            SELECT 1 FROM lists WHERE lists.id = items.list_id AND (
+              lists.owner_id = auth.uid() OR
+              EXISTS (SELECT 1 FROM list_members WHERE list_id = lists.id AND user_id = auth.uid() AND role IN ('owner', 'editor'))
+            )
+          )
+        );
+
+      CREATE POLICY "Users can delete items in lists they own or can edit" ON items
+        FOR DELETE
+        USING (
+          EXISTS (
+            SELECT 1 FROM lists WHERE lists.id = items.list_id AND (
+              lists.owner_id = auth.uid() OR
+              EXISTS (SELECT 1 FROM list_members WHERE list_id = lists.id AND user_id = auth.uid() AND role IN ('owner', 'editor'))
+            )
+          )
+        );
+
+      CREATE POLICY "Users can view purchase history in lists they own or are members of" ON purchase_history
+        FOR SELECT
+        USING (
+          EXISTS (
+            SELECT 1 FROM lists WHERE lists.id = purchase_history.list_id AND (
+              lists.owner_id = auth.uid() OR
+              EXISTS (SELECT 1 FROM list_members WHERE list_id = lists.id AND user_id = auth.uid())
+            )
+          )
+        );
+
+      CREATE POLICY "Users can insert purchase history in lists they own or can edit" ON purchase_history
+        FOR INSERT
+        WITH CHECK (
+          EXISTS (
+            SELECT 1 FROM lists WHERE lists.id = purchase_history.list_id AND (
+              lists.owner_id = auth.uid() OR
+              EXISTS (SELECT 1 FROM list_members WHERE list_id = lists.id AND user_id = auth.uid() AND role IN ('owner', 'editor'))
+            )
+          )
+        );
+
+      CREATE POLICY "Users can view their own data" ON users
+        FOR SELECT USING (auth.uid() = id);
+
+      CREATE POLICY "Users can update their own data" ON users
+        FOR UPDATE USING (auth.uid() = id);
+
+      CREATE POLICY "Users can view list members for lists they own or are members of" ON list_members
+        FOR SELECT
+        USING (
+          EXISTS (
+            SELECT 1 FROM lists WHERE lists.id = list_members.list_id AND (
+              lists.owner_id = auth.uid() OR
+              EXISTS (SELECT 1 FROM list_members lm2 WHERE lm2.list_id = list_members.list_id AND lm2.user_id = auth.uid())
+            )
+          )
+        );
+
+      CREATE POLICY "Users can insert list members as owner" ON list_members
+        FOR INSERT
+        WITH CHECK (
+          EXISTS (SELECT 1 FROM lists WHERE lists.id = list_members.list_id AND lists.owner_id = auth.uid())
+        );
+
+      CREATE POLICY "Users can update list members as owner" ON list_members
+        FOR UPDATE
+        USING (
+          EXISTS (SELECT 1 FROM lists WHERE lists.id = list_members.list_id AND lists.owner_id = auth.uid())
+        );
+
+      CREATE POLICY "Users can delete list members as owner" ON list_members
+        FOR DELETE
+        USING (
+          EXISTS (SELECT 1 FROM lists WHERE lists.id = list_members.list_id AND lists.owner_id = auth.uid())
+        );
+    `);
+
+    // Step 6: Enable Realtime
+    await client.query(`
       ALTER TABLE lists REPLICA IDENTITY FULL;
       ALTER TABLE items REPLICA IDENTITY FULL;
       ALTER TABLE purchase_history REPLICA IDENTITY FULL;
+      ALTER TABLE users REPLICA IDENTITY FULL;
+      ALTER TABLE list_members REPLICA IDENTITY FULL;
     `);
 
-    const result = await client.query("SELECT COUNT(*) as count FROM lists");
-    if (parseInt(result.rows[0].count) === 0) {
-      await client.query("INSERT INTO lists (name) VALUES ($1)", ["Minha Lista"]);
-    }
-
-    console.log("Database initialized");
+    console.log("Database initialized with auth tables and RLS");
   } finally {
     client.release();
   }
 }
 
+// Keep the existing dbPromise initialization
 const dbPromise = initDb();
 
 export { pool, dbPromise };
