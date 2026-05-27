@@ -6,25 +6,21 @@ export function Signup({ onBackToLogin }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [needsConfirmation, setNeedsConfirmation] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
-    setNeedsConfirmation(false);
     try {
       const result = await signup(email, password);
-      if (result?.needsConfirmation) {
-        setNeedsConfirmation(true);
-      } else if (!result?.success) {
+      if (!result?.success) {
         setError(result?.error?.message || 'Erro ao criar conta');
       }
-      // On success with auto-login, auth context updates user → MainApp shows App
+      // On success, auth context updates user → MainApp shows App
     } catch (err) {
       const msg = err?.error_description || err?.message || '';
       if (msg.includes('rate limit')) {
         setError('Muitas tentativas. Aguarda uns minutos e tenta de novo.');
-      } else if (msg.includes('already registered') || msg.includes('already exists')) {
+      } else if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('already been registered')) {
         setError('Este email já tem conta. Faz login.');
       } else {
         setError(msg || 'Erro ao criar conta. Tenta novamente.');
@@ -32,28 +28,6 @@ export function Signup({ onBackToLogin }) {
       console.error('Signup error:', err);
     }
   };
-
-  if (needsConfirmation) {
-    return (
-      <div className="login-container">
-        <div className="login-box">
-          <h2>✉️ Verifica o teu email</h2>
-          <p style={{ textAlign: 'center', margin: '1rem 0', lineHeight: 1.6 }}>
-            Enviámos um email de confirmação para <strong>{email}</strong>.<br /><br />
-            Clica no link do email para confirmares a tua conta e depois faz login.
-          </p>
-          <button
-            type="button"
-            className="login-button"
-            onClick={onBackToLogin}
-            style={{ marginTop: '1rem' }}
-          >
-            Voltar ao Login
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="login-container">

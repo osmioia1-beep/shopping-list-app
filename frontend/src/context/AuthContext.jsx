@@ -25,15 +25,12 @@ export const AuthProvider = ({ children }) => {
       const res = await fetch("/api/users/me", {
         headers: { "Authorization": `Bearer ${token}` },
       });
-      if (res.ok) {
-        return true;
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        console.error("Failed to ensure user in DB:", body.error || res.status);
       }
-      const body = await res.json().catch(() => ({}));
-      console.error("Failed to ensure user in DB:", body.error || res.status);
-      return false;
     } catch (e) {
       console.error("ensureUserInDb error:", e);
-      return false;
     }
   };
 
@@ -44,7 +41,6 @@ export const AuthProvider = ({ children }) => {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
           setUser(session.user);
-          // Auto-create user in DB on first confirmed login
           await ensureUserInDb(session.access_token);
         }
       } catch (err) {
@@ -61,7 +57,6 @@ export const AuthProvider = ({ children }) => {
       async (event, session) => {
         if (session) {
           setUser(session.user);
-          // Auto-create user in DB on sign-in (handles email confirmation flow)
           if (event === 'SIGNED_IN') {
             await ensureUserInDb(session.access_token);
           }
@@ -87,18 +82,15 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Signup function
+  // Signup function — email confirmation is disabled, so session is always returned
   const signup = async (email, password) => {
     try {
       const result = await authService.signUp(email, password);
       if (result.error) throw result.error;
-      // With email confirmation enabled, session is null until user confirms.
-      // Return needsConfirmation flag so UI can show "check your email".
-      const needsConfirmation = !result.session;
-      if (!needsConfirmation) {
+      if (result.user) {
         setUser(result.user);
       }
-      return { success: true, data: result, needsConfirmation };
+      return { success: true, data: result };
     } catch (error) {
       return { success: false, error };
     }
@@ -110,7 +102,7 @@ export const AuthProvider = ({ children }) => {
       await authService.signOut();
       setUser(null);
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error('Logout error', error);
     }
   };
 
