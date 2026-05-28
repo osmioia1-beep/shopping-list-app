@@ -1,3 +1,6 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import express from "express";
 import cors from "cors";
 import path from "path";
@@ -16,6 +19,17 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Debug endpoint — BEFORE auth middleware (remove after fixing)
+app.get("/api/debug/env", (req, res) => {
+  res.json({
+    hasJwtSecret: !!process.env.SUPABASE_JWT_SECRET,
+    jwtSecretLength: process.env.SUPABASE_JWT_SECRET ? process.env.SUPABASE_JWT_SECRET.length : 0,
+    hasDbUrl: !!process.env.DATABASE_URL,
+    nodeEnv: process.env.NODE_ENV,
+    port: process.env.PORT
+  });
+});
 
 // Auth middleware for all API routes
 app.use("/api", authenticateToken);

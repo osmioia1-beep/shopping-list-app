@@ -1,6 +1,5 @@
 import jwt from 'jsonwebtoken';
 import { pool } from '../db/database.js';
-const { SUPABASE_JWT_SECRET } = process.env;
 
 // Middleware to authenticate Supabase JWT tokens
 export function authenticateToken(req, res, next) {
@@ -11,13 +10,16 @@ export function authenticateToken(req, res, next) {
     return res.status(401).json({ error: 'Access token required' });
   }
 
-  if (!SUPABASE_JWT_SECRET) {
-    console.error('SUPABASE_JWT_SECRET is not set in environment!');
-    return res.status(500).json({ error: 'Server configuration error' });
+  // Use the JWT secret from environment (set on Render dashboard or loaded via dotenv)
+  const secret = process.env.SUPABASE_JWT_SECRET;
+
+  if (!secret || secret === 'undefined') {
+    console.error('SUPABASE_JWT_SECRET is not set! process.env keys:', Object.keys(process.env).filter(k => k.includes('SUPABASE')));
+    return res.status(500).json({ error: 'Server configuration error: JWT secret missing' });
   }
 
   try {
-    const decoded = jwt.verify(token, SUPABASE_JWT_SECRET);
+    const decoded = jwt.verify(token, secret);
     // Supabase JWT payload uses 'sub' for user id
     req.user = {
       id: decoded.sub,
@@ -27,7 +29,7 @@ export function authenticateToken(req, res, next) {
     };
     next();
   } catch (err) {
-    console.error('JWT verify failed:', err.message);
+    console.error('JWT verify failed:', err.message, '| Token prefix:', token.substring(0, 20) + '...');
     return res.status(403).json({ error: 'Invalid or expired token' });
   }
 }
