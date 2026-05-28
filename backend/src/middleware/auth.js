@@ -11,12 +11,14 @@ export function authenticateToken(req, res, next) {
     return res.status(401).json({ error: 'Access token required' });
   }
 
-  jwt.verify(token, SUPABASE_JWT_SECRET, (err, decoded) => {
-    if (err) {
-      return res.status(403).json({ error: 'Invalid or expired token' });
-    }
+  if (!SUPABASE_JWT_SECRET) {
+    console.error('SUPABASE_JWT_SECRET is not set in environment!');
+    return res.status(500).json({ error: 'Server configuration error' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, SUPABASE_JWT_SECRET);
     // Supabase JWT payload uses 'sub' for user id
-    // Map it to 'id' for consistency across our backend
     req.user = {
       id: decoded.sub,
       email: decoded.email,
@@ -24,7 +26,10 @@ export function authenticateToken(req, res, next) {
       ...decoded
     };
     next();
-  });
+  } catch (err) {
+    console.error('JWT verify failed:', err.message);
+    return res.status(403).json({ error: 'Invalid or expired token' });
+  }
 }
 
 // Optional: Middleware to check if user owns or has access to a list
