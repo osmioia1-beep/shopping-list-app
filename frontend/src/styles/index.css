@@ -799,3 +799,137 @@ input {
   text-decoration: underline;
 }
 .link-button:hover { color: var(--primary-dark); }
+
+/* ===== Share Modal ===== */
+.share-content {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.share-content p {
+  font-size: 0.9rem;
+  color: var(--text);
+}
+.share-role-select label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 8px;
+}
+.share-role-options {
+  display: flex;
+  gap: 8px;
+}
+.share-role-btn {
+  flex: 1;
+  padding: 12px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.share-role-btn small {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+.share-role-btn.active {
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+.share-error {
+  color: var(--danger);
+  font-size: 0.85rem;
+  padding: 8px 12px;
+  background: var(--danger-light);
+  border-radius: var(--radius-sm);
+}
+.share-link-result {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.share-link-result p {
+  font-size: 0.85rem;
+}
+.share-link-row {
+  display: flex;
+  gap: 8px;
+}
+.share-link-row input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.8rem;
+  background: var(--bg);
+  color: var(--text);
+  min-width: 0;
+}
+.share-copy-btn {
+  padding: 10px 16px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+.share-copy-btn:hover { background: var(--primary-dark); }
+.share-expiry {
+  font-size: 0.75rem !important;
+  color: var(--text-secondary) !important;
+}
+.share-hint {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+/* ===== Accept Invite Page ===== */
+.invite-message {
+  font-size: 0.9rem;
+  color: var(--text);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+.invite-success {
+  text-align: center;
+  padding: 16px 0;
+}
+.invite-success-icon {
+  font-size: 3rem;
+  margin-bottom: 12px;
+}
+.invite-success p {
+  font-size: 1rem;
+  color: var(--text);
+  margin-bottom: 20px;
+}
+.invite-success .login-button {
+  max-width: 280px;
+  margin: 0 auto;
+}
+.invite-error {
+  text-align: center;
+  padding: 16px 0;
+}
+.invite-error p {
+  color: var(--danger);
+  font-size: 0.9rem;
+  margin-bottom: 16px;
+}

@@ -94,6 +94,21 @@ async function initDb() {
       );
     `);
 
+    // Step 3b: Create invite tokens table
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS list_invites (
+        id SERIAL PRIMARY KEY,
+        token TEXT UNIQUE NOT NULL,
+        list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+        invited_by UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role TEXT NOT NULL CHECK (role IN ('owner', 'editor', 'viewer')) DEFAULT 'editor',
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        expires_at TIMESTAMPTZ DEFAULT NOW() + INTERVAL '7 days',
+        used_at TIMESTAMPTZ,
+        used_by UUID REFERENCES users(id)
+      );
+    `);
+
     // Step 4: Backfill legacy data
     const listResult = await client.query("SELECT COUNT(*) as count FROM lists WHERE owner_id IS NULL");
     if (parseInt(listResult.rows[0].count) > 0) {

@@ -512,6 +512,59 @@ export default function App({ onLogout }) {
     reloadAll();
   });
 
+  // Share list handler
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [shareLink, setShareLink] = useState('');
+  const [shareRole, setShareRole] = useState('editor');
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError] = useState('');
+
+  const handleShareList = async () => {
+    setShowShareModal(true);
+    setShareLink('');
+    setShareError('');
+    setShareLoading(true);
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setShareError('Precisas de estar logado');
+        setShareLoading(false);
+        return;
+      }
+
+      const res = await fetch(`/api/lists/${activeListId}/invite-link`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`
+        },
+        body: JSON.stringify({ role: shareRole })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setShareError(data.error || 'Erro ao gerar link');
+      } else {
+        setShareLink(data.inviteLink);
+      }
+    } catch (e) {
+      setShareError('Erro ao gerar link');
+    } finally {
+      setShareLoading(false);
+    }
+  };
+
+  const handleCopyShareLink = async () => {
+    try {
+      await navigator.clipboard.writeText(shareLink);
+      showToast('Link copiado!');
+    } catch {
+      // Fallback: select the input
+      navigator.clipboard.writeText(shareLink).catch(() => {});
+    }
+  };
+
   // List management handlers
   const handleCreateList = async () => {
     const name = prompt("Nome da nova lista:");
@@ -628,6 +681,12 @@ export default function App({ onLogout }) {
           <span className={`sync-indicator ${syncConnected ? "sync-connected" : "sync-disconnected"}`} title={syncConnected ? "Sincronização em tempo real ativa" : "Sem conexão em tempo real"}>
             {syncConnected ? "🟢" : "🟠"}
           </span>
+          <button className="header-action-btn" onClick={handleShareList} title="Partilhar lista" aria-label="Partilhar lista">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
+              <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+            </svg>
+          </button>
           <button className="header-action-btn" onClick={() => setShowHistory(true)} title="Histórico" aria-label="Histórico">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/>
@@ -684,6 +743,59 @@ export default function App({ onLogout }) {
           </>
         )}
       </div>
+
+      {showShareModal && (
+        <div className="history-overlay" onClick={() => setShowShareModal(false)}>
+          <div className="history-panel share-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="history-header">
+              <h2>📨 Partilhar Lista</h2>
+              <button className="history-close" onClick={() => setShowShareModal(false)}>✕</button>
+            </div>
+            <div className="share-content">
+              <p>Convidas alguém para colaborar na lista <strong>{activeList?.name}</strong>.</p>
+
+              <div className="share-role-select">
+                <label>Permissão:</label>
+                <div className="share-role-options">
+                  <button
+                    className={`share-role-btn ${shareRole === 'editor' ? 'active' : ''}`}
+                    onClick={() => { setShareRole('editor'); setShareLink(''); }}
+                  >
+                    ✏️ Editor
+                    <small>Pode adicionar e remover itens</small>
+                  </button>
+                  <button
+                    className={`share-role-btn ${shareRole === 'viewer' ? 'active' : ''}`}
+                    onClick={() => { setShareRole('viewer'); setShareLink(''); }}
+                  >
+                    👁️ Visualizador
+                    <small>Só pode ver a lista</small>
+                  </button>
+                </div>
+              </div>
+
+              {shareLoading && <div className="loading small"><div className="spinner" /></div>}
+
+              {shareError && <p className="share-error">⚠️ {shareError}</p>}
+
+              {shareLink && (
+                <div className="share-link-result">
+                  <p>Partilha este link com quem quiseres:</p>
+                  <div className="share-link-row">
+                    <input type="text" value={shareLink} readOnly onClick={(e) => e.target.select()} />
+                    <button className="share-copy-btn" onClick={handleCopyShareLink}>📋 Copiar</button>
+                  </div>
+                  <p className="share-expiry">⏰ Este link expira em 7 dias</p>
+                </div>
+              )}
+
+              {!shareLink && !shareLoading && !shareError && (
+                <p className="share-hint">Seleciona uma permissão acima para gerar um link.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {showHistory && (
         <HistoryPanel history={history} onReAdd={(name, qty) => { reAddFromHistory(name, Math.round(qty) || 1); }} onClose={() => setShowHistory(false)} />

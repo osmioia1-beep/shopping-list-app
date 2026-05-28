@@ -112,35 +112,65 @@ router.get("/:id/members", authorizeListAccess(false), async (req, res) => {
   }
 });
 
-// Invite user to list by email
+// Invite user to list by email (direct add)
 router.post("/:id/invite", authenticateToken, authorizeListAccess(true), async (req, res) => {
   try {
     const listId = req.params.id;
     const { email } = req.body;
-    
+
     if (!email) {
       return res.status(400).json({ error: "Email is required" });
     }
-    
+
     // Find user by email
     const userResult = await pool.query("SELECT id FROM users WHERE email = $1", [email]);
     if (userResult.rows.length === 0) {
       return res.status(404).json({ error: "User not found with this email" });
     }
-    
+
     const userId = userResult.rows[0].id;
-    
+
     // Add as member with editor role by default
     await pool.query(`
-      INSERT INTO list_members (list_id, user_id, role) 
+      INSERT INTO list_members (list_id, user_id, role)
       VALUES ($1, $2, 'editor')
       ON CONFLICT (list_id, user_id) DO UPDATE SET role = 'editor'
     `, [listId, userId]);
-    
+
     res.json({ success: true, message: "User invited successfully" });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Generate shareable invite link
+router.post("/:id/invite-link", authenticateToken, authorizeListAccess(true), async (req, res) => {
+  try {
+    const listId = req.params.id;
+    const { role = 'editor' } = req.body;
+    const userId = req.user.id;
+
+    if (!['editor', 'viewer'].includes(role)) {
+      return res.status(400).json({ error: "Role must be 'editor' or 'viewer'" });
+    }
+
+    // Generate unique token
+    const { randomUUID } = await import('crypto');
+    const token = randomUUID();
+
+    await pool.query(`
+      INSERT INTO list_invites (token, list_id, invited_by, role)
+      VALUES ($1, $2, $3, $4)
+    `, [token, listId, userId, role]);
+
+    const frontendUrl = process.env.FRONTEND_URL || '';
+    const inviteLink = `${frontendUrl}/accept-invite/${token}`;
+
+    res.json({ success: true, inviteLink, token, expiresIn: '7 days' });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Error generating invite link" });
   }
 });
 
