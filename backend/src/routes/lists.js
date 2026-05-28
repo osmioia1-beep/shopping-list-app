@@ -29,7 +29,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-// Create a new list
+// Create a new list — prevent duplicates by name (case-insensitive) for same owner
 router.post("/", async (req, res) => {
   const { name } = req.body;
   if (!name || !name.trim()) {
@@ -37,11 +37,22 @@ router.post("/", async (req, res) => {
   }
   try {
     const userId = req.user.id;
+    const trimmedName = name.trim();
+
+    // Check for existing list with same name (case-insensitive) owned by this user
+    const existing = await pool.query(
+      "SELECT id FROM lists WHERE owner_id = $1 AND LOWER(name) = LOWER($2)",
+      [userId, trimmedName]
+    );
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ error: "Já existe uma lista com este nome" });
+    }
+
     const result = await pool.query(
       "INSERT INTO lists (name, owner_id) VALUES ($1, $2) RETURNING *",
-      [name.trim(), userId]
+      [trimmedName, userId]
     );
-    // Add creator as owner
+    // Add creator as owner in list_members
     await pool.query(
       "INSERT INTO list_members (list_id, user_id, role) VALUES ($1, $2, 'owner') ON CONFLICT DO NOTHING",
       [result.rows[0].id, userId]

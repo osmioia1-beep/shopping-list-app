@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { useAuth } from '../context/AuthContext.jsx';
 import { supabase } from '../services/supabase.js';
 
 export function Login({ onSignup }) {
-  const { login, loading } = useAuth();
+  const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -11,12 +10,51 @@ export function Login({ onSignup }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
+
     try {
-      await login(email, password);
-      // On success, the auth context will update the user
+      // Try to sign in
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+
+      if (!signInError && data?.user) {
+        // Login successful — AuthContext will pick up the session via onAuthStateChange
+        return;
+      }
+
+      // Login failed — Supabase returns generic "Invalid login credentials"
+      // We need to distinguish: wrong password vs account doesn't exist
+      // Approach: try resetPasswordForEmail — Supabase always returns OK for this
+      // (even for non-existent emails, for security). So we can't rely on that.
+      // Instead: try to sign up with a dummy password to see if email is taken.
+      // If signUp returns "User already registered" → account exists → wrong password
+      // If signUp succeeds → account didn't exist → prompt to create account
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email,
+        password: '___temp_check_password_12345___'
+      });
+
+      if (signUpError) {
+        if (
+          signUpError.message?.includes('already registered') ||
+          signUpError.message?.includes('already been registered') ||
+          signUpError.message?.includes('user_already_exists')
+        ) {
+          setError('Password incorreta. Tenta novamente ou recupera a password.');
+        } else {
+          setError('Email ou password inválidos.');
+        }
+      } else if (signUpData?.user) {
+        // The account didn't exist and we just created it with a temp password
+        // This means the original login attempt was with a non-existent account
+        setError('Este email não está registado. Cria uma conta para continuares.');
+      } else {
+        setError('Email ou password inválidos.');
+      }
     } catch (err) {
-      setError('Email ou password inválidos');
+      setError('Ocorreu um erro ao tentar entrar. Tenta novamente.');
       console.error('Login error:', err);
+    } finally {
+      setLoading(false);
     }
   };
 
