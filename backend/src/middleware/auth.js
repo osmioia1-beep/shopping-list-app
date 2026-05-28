@@ -107,21 +107,32 @@ export function authorizeListAccess(requireOwner = false) {
       const { listId } = req.params;
       const userId = req.user.id;
 
+      // Check list_members table for explicit membership
       const { rows } = await pool.query(
         `SELECT role FROM list_members WHERE list_id = $1 AND user_id = $2`,
         [listId, userId]
       );
 
-      if (rows.length === 0) {
-        return res.status(403).json({ error: 'Access denied to this list' });
+      if (rows.length > 0) {
+        if (requireOwner && rows[0].role !== 'owner') {
+          return res.status(403).json({ error: 'Owner access required' });
+        }
+        req.listRole = rows[0].role;
+        return next();
       }
 
-      if (requireOwner && rows[0].role !== 'owner') {
-        return res.status(403).json({ error: 'Owner access required' });
+      // Fallback: check if user is the owner via lists.owner_id
+      const { rows: ownerRows } = await pool.query(
+        `SELECT id FROM lists WHERE id = $1 AND owner_id = $2`,
+        [listId, userId]
+      );
+
+      if (ownerRows.length > 0) {
+        req.listRole = 'owner';
+        return next();
       }
 
-      req.listRole = rows[0].role;
-      next();
+      return res.status(403).json({ error: 'Access denied to this list' });
     } catch (err) {
       console.error('Authorization error:', err);
       return res.status(500).json({ error: 'Authorization failed' });

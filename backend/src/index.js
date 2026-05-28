@@ -64,6 +64,7 @@ app.get("/api/debug/env", (req, res) => {
 app.use("/api", authenticateToken);
 
 // Get current user profile — auto-creates user in our DB on first login
+// Also claims ownership of any legacy lists (owned by placeholder legacy user)
 app.get("/api/users/me", async (req, res) => {
   try {
     const userId = req.user.id;
@@ -75,6 +76,20 @@ app.get("/api/users/me", async (req, res) => {
        RETURNING *`,
       [userId, userEmail]
     );
+
+    // Claim legacy lists: transfer ownership from legacy placeholder to this user
+    await pool.query(
+      `UPDATE lists SET owner_id = $1 WHERE owner_id = '00000000-0000-0000-0000-000000000000'`,
+      [userId]
+    );
+    // Update list_members for claimed lists
+    await pool.query(
+      `UPDATE list_members SET user_id = $1, role = 'owner'
+       WHERE user_id = '00000000-0000-0000-0000-000000000000'
+       AND list_id IN (SELECT id FROM lists WHERE owner_id = $1)`,
+      [userId]
+    );
+
     res.json(result.rows[0]);
   } catch (e) {
     console.error("Get/create user error:", e);
