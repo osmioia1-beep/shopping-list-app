@@ -5,6 +5,7 @@ import express from "express";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
+import jwt from "jsonwebtoken";
 import { pool, dbPromise } from "./db/database.js";
 import { authenticateToken, authorizeListAccess } from "./middleware/auth.js";
 import listsRouter from "./routes/lists.js";
@@ -22,13 +23,41 @@ app.use(express.json());
 
 // Debug endpoint — BEFORE auth middleware (remove after fixing)
 app.get("/api/debug/env", (req, res) => {
-  res.json({
-    hasJwtSecret: !!process.env.SUPABASE_JWT_SECRET,
-    jwtSecretLength: process.env.SUPABASE_JWT_SECRET ? process.env.SUPABASE_JWT_SECRET.length : 0,
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  const secret = process.env.SUPABASE_JWT_SECRET;
+
+  const info = {
+    hasJwtSecret: !!secret,
+    jwtSecretLength: secret ? secret.length : 0,
     hasDbUrl: !!process.env.DATABASE_URL,
     nodeEnv: process.env.NODE_ENV,
-    port: process.env.PORT
-  });
+    port: process.env.PORT,
+    hasAuthHeader: !!authHeader,
+    tokenPrefix: token ? token.substring(0, 30) + '...' : null,
+  };
+
+  // If a token is provided, try to decode and verify it
+  if (token) {
+    try {
+      const decoded = jwt.decode(token);
+      info.decodedHeader = decoded ? { sub: decoded.sub, email: decoded.email, exp: decoded.exp, role: decoded.role } : null;
+
+      if (secret && decoded) {
+        try {
+          const verified = jwt.verify(token, secret);
+          info.verifyResult = 'SUCCESS';
+          info.verifiedSub = verified.sub;
+        } catch (verifyErr) {
+          info.verifyResult = 'FAILED: ' + verifyErr.message;
+        }
+      }
+    } catch (decodeErr) {
+      info.decodeError = decodeErr.message;
+    }
+  }
+
+  res.json(info);
 });
 
 // Auth middleware for all API routes
