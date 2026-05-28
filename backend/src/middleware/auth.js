@@ -1,5 +1,55 @@
 import jwt from 'jsonwebtoken';
+import { createPublicKey } from 'crypto';
 import { pool } from '../db/database.js';
+import https from 'https';
+import http from 'http';
+
+let cachedPublicKey = null;
+let cacheExpiry = 0;
+const CACHE_DURATION = 3600000; // 1 hour
+
+function fetchJWKS() {
+  return new Promise((resolve, reject) => {
+    if (cachedPublicKey && Date.now() < cacheExpiry) {
+      resolve(cachedPublicKey);
+      return;
+    }
+
+    const supabaseUrl = process.env.SUPABASE_URL;
+    if (!supabaseUrl) {
+      reject(new Error('SUPABASE_URL not set'));
+      return;
+    }
+
+    const jwksUrl = `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
+    const client = jwksUrl.startsWith('https') ? https : http;
+
+    client.get(jwksUrl, (res) => {
+      let data = '';
+      res.on('data', chunk => data += chunk);
+      res.on('end', () => {
+        try {
+          const jwks = JSON.parse(data);
+          const key = jwks.keys?.[0];
+          if (!key) {
+            reject(new Error('No keys found in JWKS'));
+            return;
+          }
+          // Convert JWK to PEM
+          const keyObject = createPublicKey({ key, format: 'jwk' });
+          const publicKey = keyObject.export({ format: 'pem', type: 'spki' });
+          cachedPublicKey = publicKey;
+          cacheExpiry = Date.now() + CACHE_DURATION;
+          resolve(publicKey);
+        } catch (e) {
+          reject(e);
+        }
+      });
+    }).on('error', reject);
+  });
+}
+
+const FALLBACK_SECRET = process.env.SUPABASE_JWT_SECRET;
 
 // Middleware to authenticate Supabase JWT tokens
 export function authenticateToken(req, res, next) {
@@ -10,31 +60,47 @@ export function authenticateToken(req, res, next) {
     return res.status(401).json({ error: 'Access token required' });
   }
 
-  // Use the JWT secret from environment (set on Render dashboard or loaded via dotenv)
-  const secret = process.env.SUPABASE_JWT_SECRET;
+  // Try JWKS (ES256) verification first
+  fetchJWKS()
+    .then(publicKey => {
+      try {
+        const decoded = jwt.verify(token, publicKey, { algorithms: ['ES256', 'RS256'] });
+        req.user = {
+          id: decoded.sub,
+          email: decoded.email,
+          role: decoded.role,
+          ...decoded
+        };
+        return next();
+      } catch (verifyErr) {
+        throw verifyErr;
+      }
+    })
+    .catch(jwksErr => {
+      console.log('JWKS verification failed:', jwksErr.message);
 
-  if (!secret || secret === 'undefined') {
-    console.error('SUPABASE_JWT_SECRET is not set! process.env keys:', Object.keys(process.env).filter(k => k.includes('SUPABASE')));
-    return res.status(500).json({ error: 'Server configuration error: JWT secret missing' });
-  }
+      // Fallback: try HS256 with SUPABASE_JWT_SECRET
+      if (FALLBACK_SECRET) {
+        try {
+          const decoded = jwt.verify(token, FALLBACK_SECRET);
+          req.user = {
+            id: decoded.sub,
+            email: decoded.email,
+            role: decoded.role,
+            ...decoded
+          };
+          return next();
+        } catch (hsErr) {
+          console.log('HS256 fallback also failed:', hsErr.message);
+        }
+      }
 
-  try {
-    const decoded = jwt.verify(token, secret);
-    // Supabase JWT payload uses 'sub' for user id
-    req.user = {
-      id: decoded.sub,
-      email: decoded.email,
-      role: decoded.role,
-      ...decoded
-    };
-    next();
-  } catch (err) {
-    console.error('JWT verify failed:', err.message, '| Token prefix:', token.substring(0, 20) + '...');
-    return res.status(403).json({ error: 'Invalid or expired token' });
-  }
+      console.error('All JWT verification methods failed');
+      return res.status(403).json({ error: 'Invalid or expired token' });
+    });
 }
 
-// Optional: Middleware to check if user owns or has access to a list
+// Middleware to check if user owns or has access to a list
 export function authorizeListAccess(requireOwner = false) {
   return async (req, res, next) => {
     try {
