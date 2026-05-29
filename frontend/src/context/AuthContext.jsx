@@ -19,15 +19,45 @@ export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Ensure user exists in our database (auto-create on first login)
+  // Register user in our backend DB and create default list
+  const registerInBackend = async (token) => {
+    try {
+      const res = await fetch("/api/users/register", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        console.error("Failed to register in backend:", body.error || res.status);
+        return false;
+      }
+      return true;
+    } catch (e) {
+      console.error("registerInBackend error:", e);
+      return false;
+    }
+  };
+
+  // Ensure user exists in our database (call register on first login)
   const ensureUserInDb = async (token) => {
     try {
       const res = await fetch("/api/users/me", {
         headers: { "Authorization": `Bearer ${token}` },
       });
+      if (res.status === 403) {
+        // User not registered in our backend yet — register them
+        const registered = await registerInBackend(token);
+        if (!registered) {
+          console.error("Failed to auto-register user after signup");
+        }
+        return;
+      }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        console.error("Failed to ensure user in DB:", body.error || res.status);
+        console.error("Failed to get user profile:", body.error || res.status);
       }
     } catch (e) {
       console.error("ensureUserInDb error:", e);

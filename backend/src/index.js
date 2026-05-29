@@ -171,26 +171,78 @@ app.post("/api/lists/accept-invite/:token", async (req, res) => {
   }
 });
 
-// Get current user profile — auto-creates user in our DB on first login
-// Also claims ownership of any legacy lists (owned by placeholder legacy user)
+// Register a new user — called after Supabase signup succeeds
+// Creates the user in our DB and sets up a default list with an example item
+app.post("/api/users/register", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userEmail = req.user.email;
+
+    // Check if user already exists (e.g. re-registering or already claimed)
+    const existing = await pool.query("SELECT id FROM users WHERE id = $1", [userId]);
+    if (existing.rows.length > 0) {
+      return res.status(200).json({ message: "User already registered", userId });
+    }
+
+    // Create user in our DB
+    await pool.query(
+      `INSERT INTO users (id, email) VALUES ($1, $2)`,
+      [userId, userEmail]
+    );
+
+    // Create default list
+    const listResult = await pool.query(
+      "INSERT INTO lists (name, owner_id) VALUES ($1, $2) RETURNING id",
+      ["A minha primeira lista", userId]
+    );
+    const listId = listResult.rows[0].id;
+
+    // Add as owner in list_members
+    await pool.query(
+      "INSERT INTO list_members (list_id, user_id, role) VALUES ($1, $2, 'owner')",
+      [listId, userId]
+    );
+
+    // Add default example item
+    await pool.query(
+      "INSERT INTO items (list_id, name, quantity) VALUES ($1, $2, $3)",
+      [listId, "Leite 🥛", 1]
+    );
+
+    res.status(201).json({ message: "User registered", userId, listId });
+  } catch (e) {
+    console.error("Register user error:", e);
+    res.status(500).json({ error: "Failed to register user" });
+  }
+});
+
+// Get current user profile — does NOT auto-create (must be registered first)
+// Returns 403 if user hasn't completed registration via POST /api/users/register
 app.get("/api/users/me", async (req, res) => {
   try {
     const userId = req.user.id;
     const userEmail = req.user.email;
-    // Upsert: create if not exists, return existing otherwise
-    const result = await pool.query(
-      `INSERT INTO users (id, email) VALUES ($1, $2)
-       ON CONFLICT (id) DO UPDATE SET email = $2, updated_at = NOW()
-       RETURNING *`,
-      [userId, userEmail]
-    );
+
+    const result = await pool.query("SELECT * FROM users WHERE id = $1", [userId]);
+
+    if (result.rows.length === 0) {
+      return res.status(403).json({ error: "User not registered. Please complete registration first." });
+    }
+
+    // Update email if it changed
+    if (result.rows[0].email !== userEmail) {
+      const updated = await pool.query(
+        "UPDATE users SET email = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
+        [userEmail, userId]
+      );
+      return res.json(updated.rows[0]);
+    }
 
     // Claim legacy lists: transfer ownership from legacy placeholder to this user
     await pool.query(
       `UPDATE lists SET owner_id = $1 WHERE owner_id = '00000000-0000-0000-0000-000000000000'`,
       [userId]
     );
-    // Update list_members for claimed lists
     await pool.query(
       `UPDATE list_members SET user_id = $1, role = 'owner'
        WHERE user_id = '00000000-0000-0000-0000-000000000000'
@@ -200,7 +252,7 @@ app.get("/api/users/me", async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (e) {
-    console.error("Get/create user error:", e);
+    console.error("Get user error:", e);
     res.status(500).json({ error: "Failed to get user profile" });
   }
 });

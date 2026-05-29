@@ -21,35 +21,11 @@ export function Login({ onSignup }) {
         return;
       }
 
-      // Login failed — Supabase returns generic "Invalid login credentials"
-      // We need to distinguish: wrong password vs account doesn't exist
-      // Approach: try resetPasswordForEmail — Supabase always returns OK for this
-      // (even for non-existent emails, for security). So we can't rely on that.
-      // Instead: try to sign up with a dummy password to see if email is taken.
-      // If signUp returns "User already registered" → account exists → wrong password
-      // If signUp succeeds → account didn't exist → prompt to create account
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password: '___temp_check_password_12345___'
-      });
-
-      if (signUpError) {
-        if (
-          signUpError.message?.includes('already registered') ||
-          signUpError.message?.includes('already been registered') ||
-          signUpError.message?.includes('user_already_exists')
-        ) {
-          setError('Password incorreta. Tenta novamente ou recupera a password.');
-        } else {
-          setError('Email ou password inválidos.');
-        }
-      } else if (signUpData?.user) {
-        // The account didn't exist and we just created it with a temp password
-        // This means the original login attempt was with a non-existent account
-        setError('Este email não está registado. Cria uma conta para continuares.');
-      } else {
-        setError('Email ou password inválidos.');
-      }
+      // Supabase returns the same "Invalid login" error for both wrong password
+      // and non-existent account (intentionally, for security). Since we can't
+      // reliably distinguish the two cases on the client, we show a combined message
+      // that guides the user to try signup if they don't have an account.
+      setError('Email ou password inválidos. Se não tens conta, cria uma primeiro.');
     } catch (err) {
       setError('Ocorreu um erro ao tentar entrar. Tenta novamente.');
       console.error('Login error:', err);
