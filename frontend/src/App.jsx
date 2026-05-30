@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useAuth } from './context/AuthContext.jsx';
 import { useShoppingList } from './hooks/useShoppingList.js';
 import { useRealtimeSync } from "./hooks/useRealtimeSync.js";
+import { supabase } from "./services/supabase.js";
 
 // ===== Dark Mode Hook =====
 function useDarkMode() {
