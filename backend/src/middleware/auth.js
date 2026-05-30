@@ -71,6 +71,7 @@ export function authenticateToken(req, res, next) {
           role: decoded.role,
           ...decoded
         };
+        console.log("[auth] JWT verified, user:", decoded.sub, "email:", decoded.email);
         return next();
       } catch (verifyErr) {
         throw verifyErr;
