@@ -150,6 +150,7 @@ router.post("/:id/invite-link", authenticateToken, authorizeListAccess(true), as
     const listId = req.params.id;
     const { role = 'editor' } = req.body;
     const userId = req.user.id;
+    console.log("[invite-link] Generating link for listId:", listId, "userId:", userId, "role:", role);
 
     if (!['editor', 'viewer'].includes(role)) {
       return res.status(400).json({ error: "Role must be 'editor' or 'viewer'" });
@@ -167,9 +168,10 @@ router.post("/:id/invite-link", authenticateToken, authorizeListAccess(true), as
     const frontendUrl = process.env.FRONTEND_URL || '';
     const inviteLink = `${frontendUrl}/accept-invite/${token}`;
 
+    console.log("[invite-link] Success! Link:", inviteLink);
     res.json({ success: true, inviteLink, token, expiresIn: '7 days' });
   } catch (e) {
-    console.error(e);
+    console.error("[invite-link] Error:", e.message, e.stack);
     res.status(500).json({ error: "Error generating invite link" });
   }
 });
