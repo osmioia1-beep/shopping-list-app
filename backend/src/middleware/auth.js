@@ -71,7 +71,6 @@ export function authenticateToken(req, res, next) {
           role: decoded.role,
           ...decoded
         };
-        console.log("[auth] JWT verified, user:", decoded.sub, "email:", decoded.email);
         return next();
       } catch (verifyErr) {
         throw verifyErr;
@@ -105,9 +104,8 @@ export function authenticateToken(req, res, next) {
 export function authorizeListAccess(requireOwner = false) {
   return async (req, res, next) => {
     try {
-      const { listId } = req.params;
+      const listId = req.params.listId || req.params.id;
       const userId = req.user.id;
-      console.log("[authorizeListAccess] listId:", listId, "userId:", userId, "requireOwner:", requireOwner);
 
       // Check list_members table for explicit membership
       const { rows } = await pool.query(
@@ -116,9 +114,7 @@ export function authorizeListAccess(requireOwner = false) {
       );
 
       if (rows.length > 0) {
-        console.log("[authorizeListAccess] Found in list_members, role:", rows[0].role);
         if (requireOwner && rows[0].role !== 'owner') {
-          console.log("[authorizeListAccess] REJECTED: requires owner but role is", rows[0].role);
           return res.status(403).json({ error: 'Owner access required' });
         }
         req.listRole = rows[0].role;
@@ -126,25 +122,19 @@ export function authorizeListAccess(requireOwner = false) {
       }
 
       // Fallback: check if user is the owner via lists.owner_id
-      console.log("[authorizeListAccess] Not in list_members, checking lists.owner_id fallback");
       const { rows: ownerRows } = await pool.query(
         `SELECT id FROM lists WHERE id = $1 AND owner_id = $2`,
         [listId, userId]
       );
 
       if (ownerRows.length > 0) {
-        console.log("[authorizeListAccess] Found as owner via lists.owner_id");
         req.listRole = 'owner';
         return next();
       }
 
-      console.log("[authorizeListAccess] REJECTED: user has no access to this list");
-      return res.status(403).json({
-        error: 'Access denied to this list',
-        debug: { listId, userId, requireOwner, listMembersFound: rows.length, ownerFallbackFound: ownerRows.length }
-      });
+      return res.status(403).json({ error: 'Access denied to this list' });
     } catch (err) {
-      console.error('[authorizeListAccess] Error:', err);
+      console.error('Authorization error:', err);
       return res.status(500).json({ error: 'Authorization failed' });
     }
   };

@@ -169,9 +169,9 @@ router.post("/:id/invite-link", authenticateToken, authorizeListAccess(true), as
     const inviteLink = `${frontendUrl}/accept-invite/${token}`;
 
     console.log("[invite-link] Success! Link:", inviteLink);
-    res.json({ success: true, inviteLink, token, expiresIn: '7 days', debug: { listId, userId, role } });
+    res.json({ success: true, inviteLink, token, expiresIn: '7 days' });
   } catch (e) {
-    console.error("[invite-link] Error:", e.message, e.stack);
+    console.error("[invite-link] Error:", e.message);
     res.status(500).json({ error: "Error generating invite link" });
   }
 });
