@@ -528,12 +528,17 @@ export default function App({ onLogout }) {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
+        console.error("[share] No session found");
         setShareError('Precisas de estar logado');
         setShareLoading(false);
         return;
       }
 
-      const res = await fetch(`/api/lists/${activeListId}/invite-link`, {
+      console.log("[share] activeListId:", activeListId, "session ok, making request...");
+      const url = `/api/lists/${activeListId}/invite-link`;
+      console.log("[share] URL:", url);
+
+      const res = await fetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -542,13 +547,17 @@ export default function App({ onLogout }) {
         body: JSON.stringify({ role: shareRole })
       });
 
+      console.log("[share] Response status:", res.status);
       const data = await res.json();
+      console.log("[share] Response data:", data);
+
       if (!res.ok) {
         setShareError(data.error || 'Erro ao gerar link');
       } else {
         setShareLink(data.inviteLink);
       }
     } catch (e) {
+      console.error("[share] Exception:", e);
       setShareError('Erro ao gerar link');
     } finally {
       setShareLoading(false);
