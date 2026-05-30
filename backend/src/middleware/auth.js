@@ -139,7 +139,10 @@ export function authorizeListAccess(requireOwner = false) {
       }
 
       console.log("[authorizeListAccess] REJECTED: user has no access to this list");
-      return res.status(403).json({ error: 'Access denied to this list' });
+      return res.status(403).json({
+        error: 'Access denied to this list',
+        debug: { listId, userId, requireOwner, listMembersFound: rows.length, ownerFallbackFound: ownerRows.length }
+      });
     } catch (err) {
       console.error('[authorizeListAccess] Error:', err);
       return res.status(500).json({ error: 'Authorization failed' });
