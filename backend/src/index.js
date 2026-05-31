@@ -24,7 +24,9 @@ app.use(express.json());
 // Debug endpoint — BEFORE auth middleware (remove after fixing)
 app.get("/api/debug/env", async (req, res) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const headerToken = authHeader && authHeader.split(' ')[1];
+  const queryToken = req.query.token;
+  const token = headerToken || queryToken;
   const secret = process.env.SUPABASE_JWT_SECRET;
   const { getLastJWKSStatus } = await import('./middleware/auth.js');
   const jwksStatus = getLastJWKSStatus();
@@ -37,11 +39,12 @@ app.get("/api/debug/env", async (req, res) => {
     nodeEnv: process.env.NODE_ENV,
     port: process.env.PORT,
     hasAuthHeader: !!authHeader,
+    hasQueryToken: !!queryToken,
     tokenPrefix: token ? token.substring(0, 30) + '...' : null,
     jwksStatus,
   };
 
-  // If a token is provided, try to decode and verify it
+  // If a token is provided (via header or query), try to decode and verify it
   if (token) {
     try {
       const decoded = jwt.decode(token);
@@ -74,7 +77,7 @@ app.get("/api/debug/env", async (req, res) => {
         // Try HS256 verification
         if (secret) {
           try {
-            const verified = jwt.verify(token, secret);
+            const verifiedHS = jwt.verify(token, secret);
             info.hs256Verify = 'SUCCESS';
           } catch (hsErr) {
             info.hs256Verify = 'FAILED: ' + hsErr.message;
