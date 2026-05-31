@@ -24,32 +24,52 @@ function fetchJWKS() {
     const jwksUrl = `${supabaseUrl}/auth/v1/.well-known/jwks.json`;
     const client = jwksUrl.startsWith('https') ? https : http;
 
-    client.get(jwksUrl, (res) => {
+    const req = client.get(jwksUrl, (res) => {
+      // Handle redirects
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const redirectClient = res.headers.location.startsWith('https') ? https : http;
+        redirectClient.get(res.headers.location, (res2) => {
+          let data = '';
+          res2.on('data', chunk => data += chunk);
+          res2.on('end', () => processJWKS(data, resolve, reject));
+        }).on('error', reject);
+        return;
+      }
       let data = '';
       res.on('data', chunk => data += chunk);
-      res.on('end', () => {
-        try {
-          const jwks = JSON.parse(data);
-          const key = jwks.keys?.[0];
-          if (!key) {
-            reject(new Error('No keys found in JWKS'));
-            return;
-          }
-          // Convert JWK to PEM
-          const keyObject = createPublicKey({ key, format: 'jwk' });
-          const publicKey = keyObject.export({ format: 'pem', type: 'spki' });
-          cachedPublicKey = publicKey;
-          cacheExpiry = Date.now() + CACHE_DURATION;
-          resolve(publicKey);
-        } catch (e) {
-          reject(e);
-        }
-      });
-    }).on('error', reject);
+      res.on('end', () => processJWKS(data, resolve, reject));
+    });
+    req.on('error', reject);
+    req.setTimeout(5000, () => {
+      req.destroy();
+      reject(new Error('JWKS fetch timeout'));
+    });
   });
 }
 
+function processJWKS(data, resolve, reject) {
+  try {
+    const jwks = JSON.parse(data);
+    const key = jwks.keys?.[0];
+    if (!key) {
+      reject(new Error('No keys found in JWKS'));
+      return;
+    }
+    // Convert JWK to PEM
+    const keyObject = createPublicKey({ key, format: 'jwk' });
+    const publicKey = keyObject.export({ format: 'pem', type: 'spki' });
+    cachedPublicKey = publicKey;
+    cacheExpiry = Date.now() + CACHE_DURATION;
+    resolve(publicKey);
+  } catch (e) {
+    reject(e);
+  }
+}
+
 const FALLBACK_SECRET = process.env.SUPABASE_JWT_SECRET;
+
+// Debug info attached to request for logging
+let lastJWKSStatus = { status: 'unknown', error: null, timestamp: 0 };
 
 // Middleware to authenticate Supabase JWT tokens
 export function authenticateToken(req, res, next) {
@@ -63,6 +83,7 @@ export function authenticateToken(req, res, next) {
   // Try JWKS (ES256) verification first
   fetchJWKS()
     .then(publicKey => {
+      lastJWKSStatus = { status: 'ok', error: null, timestamp: Date.now() };
       try {
         const decoded = jwt.verify(token, publicKey, { algorithms: ['ES256', 'RS256'] });
         req.user = {
@@ -73,32 +94,41 @@ export function authenticateToken(req, res, next) {
         };
         return next();
       } catch (verifyErr) {
-        throw verifyErr;
+        // JWKS worked but token itself is invalid
+        console.error('ES256 token verify failed:', verifyErr.message, '| Token prefix:', token.substring(0, 20) + '...');
+        return res.status(403).json({ error: 'Invalid or expired token', debug: 'ES256 verify: ' + verifyErr.message });
       }
     })
     .catch(jwksErr => {
-      console.log('JWKS verification failed:', jwksErr.message);
+      lastJWKSStatus = { status: 'error', error: jwksErr.message, timestamp: Date.now() };
+      console.error('JWKS fetch/verify failed:', jwksErr.message);
 
       // Fallback: try HS256 with SUPABASE_JWT_SECRET
       if (FALLBACK_SECRET) {
         try {
-          const decoded = jwt.verify(token, FALLBACK_SECRET);
+          const decoded = jwt.verify(token, FALLBACK_SECRET, { algorithms: ['HS256'] });
           req.user = {
             id: decoded.sub,
             email: decoded.email,
             role: decoded.role,
             ...decoded
           };
+          console.log('HS256 fallback succeeded (JWKS was down)');
           return next();
         } catch (hsErr) {
-          console.log('HS256 fallback also failed:', hsErr.message);
+          console.error('HS256 fallback also failed:', hsErr.message);
         }
       }
 
       console.error('All JWT verification methods failed');
-      return res.status(403).json({ error: 'Invalid or expired token' });
+      return res.status(403).json({
+        error: 'Invalid or expired token',
+        debug: 'JWKS: ' + jwksErr.message + ' | HS256: failed'
+      });
     });
 }
+
+export function getLastJWKSStatus() { return lastJWKSStatus; }
 
 // Middleware to check if user owns or has access to a list
 export function authorizeListAccess(requireOwner = false) {

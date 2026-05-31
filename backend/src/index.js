@@ -22,34 +22,63 @@ app.use(cors());
 app.use(express.json());
 
 // Debug endpoint — BEFORE auth middleware (remove after fixing)
-app.get("/api/debug/env", (req, res) => {
+app.get("/api/debug/env", async (req, res) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
   const secret = process.env.SUPABASE_JWT_SECRET;
+  const { getLastJWKSStatus } = await import('./middleware/auth.js');
+  const jwksStatus = getLastJWKSStatus();
 
   const info = {
     hasJwtSecret: !!secret,
     jwtSecretLength: secret ? secret.length : 0,
     hasDbUrl: !!process.env.DATABASE_URL,
+    hasSupabaseUrl: !!process.env.SUPABASE_URL,
     nodeEnv: process.env.NODE_ENV,
     port: process.env.PORT,
     hasAuthHeader: !!authHeader,
     tokenPrefix: token ? token.substring(0, 30) + '...' : null,
+    jwksStatus,
   };
 
   // If a token is provided, try to decode and verify it
   if (token) {
     try {
       const decoded = jwt.decode(token);
-      info.decodedHeader = decoded ? { sub: decoded.sub, email: decoded.email, exp: decoded.exp, role: decoded.role } : null;
+      info.decodedHeader = decoded ? { sub: decoded.sub, email: decoded.email, exp: decoded.exp, role: decoded.role, alg: decoded.alg } : null;
 
-      if (secret && decoded) {
+      if (decoded) {
+        // Try JWKS verification
         try {
-          const verified = jwt.verify(token, secret);
-          info.verifyResult = 'SUCCESS';
-          info.verifiedSub = verified.sub;
-        } catch (verifyErr) {
-          info.verifyResult = 'FAILED: ' + verifyErr.message;
+          const { createPublicKey } = await import('crypto');
+          const httpsModule = await import('https');
+          const jwtFull = (await import('jsonwebtoken')).default || await import('jsonwebtoken');
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const jwksData = await new Promise((resolve, reject) => {
+            httpsModule.get(`${supabaseUrl}/auth/v1/.well-known/jwks.json`, (res) => {
+              let data = '';
+              res.on('data', chunk => data += chunk);
+              res.on('end', () => resolve(JSON.parse(data)));
+            }).on('error', reject);
+          });
+          const key = jwksData.keys?.[0];
+          const keyObject = createPublicKey({ key, format: 'jwk' });
+          const publicKey = keyObject.export({ format: 'pem', type: 'spki' });
+          const verified = jwtFull.verify(token, publicKey, { algorithms: ['ES256', 'RS256'] });
+          info.jwksVerify = 'SUCCESS';
+          info.jwksVerifiedSub = verified.sub;
+        } catch (jwksErr) {
+          info.jwksVerify = 'FAILED: ' + jwksErr.message;
+        }
+
+        // Try HS256 verification
+        if (secret) {
+          try {
+            const verified = jwt.verify(token, secret);
+            info.hs256Verify = 'SUCCESS';
+          } catch (hsErr) {
+            info.hs256Verify = 'FAILED: ' + hsErr.message;
+          }
         }
       }
     } catch (decodeErr) {
