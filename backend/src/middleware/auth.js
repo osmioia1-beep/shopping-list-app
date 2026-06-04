@@ -8,10 +8,11 @@ let cachedPublicKey = null;
 let cacheExpiry = 0;
 const CACHE_DURATION = 3600000; // 1 hour
 
-function fetchJWKS() {
+function fetchJWKS(kid) {
   return new Promise((resolve, reject) => {
-    if (cachedPublicKey && Date.now() < cacheExpiry) {
-      resolve(cachedPublicKey);
+    // If we have a cached key and it matches the requested kid (or no kid specified), use it
+    if (cachedPublicKey && Date.now() < cacheExpiry && (!kid || cachedPublicKey.kid === kid)) {
+      resolve(cachedPublicKey.pem);
       return;
     }
 
@@ -31,13 +32,13 @@ function fetchJWKS() {
         redirectClient.get(res.headers.location, (res2) => {
           let data = '';
           res2.on('data', chunk => data += chunk);
-          res2.on('end', () => processJWKS(data, resolve, reject));
+          res2.on('end', () => processJWKS(data, kid, resolve, reject));
         }).on('error', reject);
         return;
       }
       let data = '';
       res.on('data', chunk => data += chunk);
-      res.on('end', () => processJWKS(data, resolve, reject));
+      res.on('end', () => processJWKS(data, kid, resolve, reject));
     });
     req.on('error', reject);
     req.setTimeout(5000, () => {
@@ -47,18 +48,20 @@ function fetchJWKS() {
   });
 }
 
-function processJWKS(data, resolve, reject) {
+function processJWKS(data, kid, resolve, reject) {
   try {
     const jwks = JSON.parse(data);
-    const key = jwks.keys?.[0];
-    if (!key) {
+    const keys = jwks.keys || [];
+    if (keys.length === 0) {
       reject(new Error('No keys found in JWKS'));
       return;
     }
+    // Find the key matching the token's kid, or fall back to first key
+    const key = kid ? keys.find(k => k.kid === kid) || keys[0] : keys[0];
     // Convert JWK to PEM
     const keyObject = createPublicKey({ key, format: 'jwk' });
     const publicKey = keyObject.export({ format: 'pem', type: 'spki' });
-    cachedPublicKey = publicKey;
+    cachedPublicKey = { kid: key.kid, pem: publicKey };
     cacheExpiry = Date.now() + CACHE_DURATION;
     resolve(publicKey);
   } catch (e) {
@@ -80,12 +83,26 @@ export function authenticateToken(req, res, next) {
     return res.status(401).json({ error: 'Access token required' });
   }
 
+  // Extract kid from token header (without verifying) to find the right JWK
+  let tokenKid = null;
+  try {
+    const headerB64 = token.split('.')[0];
+    const header = JSON.parse(Buffer.from(headerB64, 'base64').toString());
+    tokenKid = header.kid;
+  } catch (e) {
+    console.error('Failed to parse token header:', e.message);
+  }
+
   // Try JWKS (ES256) verification first
-  fetchJWKS()
+  fetchJWKS(tokenKid)
     .then(publicKey => {
       lastJWKSStatus = { status: 'ok', error: null, timestamp: Date.now() };
       try {
-        const decoded = jwt.verify(token, publicKey, { algorithms: ['ES256', 'RS256'] });
+        const decoded = jwt.verify(token, publicKey, {
+          algorithms: ['ES256', 'RS256'],
+          audience: 'authenticated',
+          issuer: `${process.env.SUPABASE_URL}/auth/v1`
+        });
         req.user = {
           id: decoded.sub,
           email: decoded.email,

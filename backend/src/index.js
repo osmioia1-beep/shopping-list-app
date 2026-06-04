@@ -152,7 +152,7 @@ app.post("/api/lists/accept-invite/:token", async (req, res) => {
       const key = jwksData.keys?.[0];
       const keyObject = createPublicKey({ key, format: 'jwk' });
       const publicKey = keyObject.export({ format: 'pem', type: 'spki' });
-      const decoded = jwt.verify(jwtToken, publicKey, { algorithms: ['ES256', 'RS256'] });
+      const decoded = jwt.verify(jwtToken, publicKey, { algorithms: ['ES256', 'RS256'], audience: 'authenticated' });
       userId = decoded.sub;
       userEmail = decoded.email;
     } catch (jwtErr) {
