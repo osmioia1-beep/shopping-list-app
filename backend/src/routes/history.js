@@ -38,7 +38,7 @@ router.use(async (req, res, next) => {
 });
 
 // Get purchase history for a list
-router.get("/:listId/history", async (req, res) => {
+router.get("/history", async (req, res) => {
   const { listId } = req.params;
   try {
     const history = await pool.query(
@@ -61,7 +61,7 @@ router.get("/:listId/history", async (req, res) => {
 });
 
 // Record a purchase in history (called when item is toggled to purchased)
-router.post("/:listId/history", async (req, res) => {
+router.post("/history", async (req, res) => {
   const { listId } = req.params;
   const { name, quantity } = req.body;
 
@@ -82,7 +82,7 @@ router.post("/:listId/history", async (req, res) => {
 });
 
 // Get list statistics
-router.get("/:listId/stats", async (req, res) => {
+router.get("/stats", async (req, res) => {
   const { listId } = req.params;
   try {
     const stats = await pool.query(

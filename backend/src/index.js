@@ -292,7 +292,7 @@ app.get("/api/users/me", async (req, res) => {
 // API routes
 app.use("/api/lists", listsRouter);
 app.use("/api/lists/:listId/items", itemsRouter);
-app.use("/api/lists", historyRouter);
+app.use("/api/lists/:listId", historyRouter);
 
 // Serve frontend in production
 if (process.env.NODE_ENV === "production") {
