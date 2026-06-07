@@ -91,11 +91,21 @@ function ErrorBanner({ error, onDismiss }) {
 function AddItemForm({ onAdd }) {
   const [name, setName] = useState("");
   const [quantity, setQuantity] = useState(1);
+  const [error, setError] = useState("");
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    setError("");
+
     if (!name.trim()) return;
-    onAdd(name.trim(), quantity || 1);
+
+    const qty = Number(quantity);
+    if (!Number.isFinite(qty) || qty < 1) {
+      setError("A quantidade tem de ser pelo menos 1.");
+      return;
+    }
+
+    onAdd(name.trim(), Math.round(qty));
     setName("");
     setQuantity(1);
   };
@@ -109,12 +119,13 @@ function AddItemForm({ onAdd }) {
             value={name} onChange={(e) => setName(e.target.value)} autoComplete="off"
           />
           <input
-            type="number" name="quantity" min="1" max="999"
-            value={quantity} onChange={(e) => setQuantity(e.target.valueAsNumber || 1)}
+            type="number" name="quantity" max="999"
+            value={quantity} onChange={(e) => setQuantity(e.target.valueAsNumber || "")}
           />
         </div>
         <button type="submit" disabled={!name.trim()}>＋ Adicionar</button>
       </div>
+      {error && <div className="add-form-error">{error}</div>}
     </form>
   );
 }
