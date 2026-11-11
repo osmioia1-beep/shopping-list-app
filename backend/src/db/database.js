@@ -129,18 +129,7 @@ async function initDb() {
       console.log("Backfilled legacy lists with owner_id");
     }
 
-    // Step 5: Disable RLS — our auth is handled by backend middleware, not Supabase PostgREST
-    // RLS with auth.uid() only works when Supabase PostgREST forwards the JWT to Postgres
-    // Since we use pg directly, auth.uid() always returns NULL and blocks everything
-    await client.query(`
-      ALTER TABLE lists DISABLE ROW LEVEL SECURITY;
-      ALTER TABLE items DISABLE ROW LEVEL SECURITY;
-      ALTER TABLE purchase_history DISABLE ROW LEVEL SECURITY;
-      ALTER TABLE users DISABLE ROW LEVEL SECURITY;
-      ALTER TABLE list_members DISABLE ROW LEVEL SECURITY;
-    `);
-
-    // Step 6: Enable Realtime (needed for Supabase Realtime features)
+    // Enable Realtime (needed for Supabase Realtime features)
     await client.query(`
       ALTER TABLE lists REPLICA IDENTITY FULL;
       ALTER TABLE items REPLICA IDENTITY FULL;
@@ -149,7 +138,7 @@ async function initDb() {
       ALTER TABLE list_members REPLICA IDENTITY FULL;
     `);
 
-    console.log("Database initialized with auth tables (RLS disabled — backend handles auth)");
+    console.log("Database initialized with auth tables");
   } finally {
     client.release();
   }
