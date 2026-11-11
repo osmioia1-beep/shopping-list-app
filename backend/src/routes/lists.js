@@ -168,7 +168,6 @@ router.post("/:id/invite-link", authenticateToken, authorizeListAccess(true), as
     const frontendUrl = process.env.FRONTEND_URL || '';
     const inviteLink = `${frontendUrl}/accept-invite/${token}`;
 
-    console.log("[invite-link] Success! Link:", inviteLink);
     res.json({ success: true, inviteLink, token, expiresIn: '7 days' });
   } catch (e) {
     console.error("[invite-link] Error:", e.message);
