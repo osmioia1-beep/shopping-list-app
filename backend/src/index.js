@@ -25,7 +25,7 @@ app.use("/api", authenticateToken);
 
 // ===== INVITE ENDPOINTS =====
 
-// Accept invite — public endpoint (no auth required, token is the auth)
+// Accept an invite using the session verified by the API middleware
 app.post("/api/lists/accept-invite/:token", async (req, res) => {
   try {
     const { token } = req.params;
@@ -52,40 +52,7 @@ app.post("/api/lists/accept-invite/:token", async (req, res) => {
       return res.status(409).json({ error: "Este convite já foi utilizado" });
     }
 
-    // Get the user from the session (they need to be logged in)
-    // We need to extract the JWT from the Authorization header manually
-    const authHeader = req.headers['authorization'];
-    const jwtToken = authHeader && authHeader.split(' ')[1];
-
-    if (!jwtToken) {
-      return res.status(401).json({ error: "Precisas de estar logado para aceitar o convite" });
-    }
-
-    // Verify JWT
-    const { createPublicKey } = await import('crypto');
-    const https = (await import('https'));
-    const jwt = (await import('jsonwebtoken'));
-
-    let userId, userEmail;
-    try {
-      // Fetch JWKS to verify
-      const supabaseUrl = process.env.SUPABASE_URL;
-      const jwksData = await new Promise((resolve, reject) => {
-        https.get(`${supabaseUrl}/auth/v1/.well-known/jwks.json`, (res) => {
-          let data = '';
-          res.on('data', chunk => data += chunk);
-          res.on('end', () => resolve(JSON.parse(data)));
-        }).on('error', reject);
-      });
-      const key = jwksData.keys?.[0];
-      const keyObject = createPublicKey({ key, format: 'jwk' });
-      const publicKey = keyObject.export({ format: 'pem', type: 'spki' });
-      const decoded = jwt.verify(jwtToken, publicKey, { algorithms: ['ES256', 'RS256'], audience: 'authenticated' });
-      userId = decoded.sub;
-      userEmail = decoded.email;
-    } catch (jwtErr) {
-      return res.status(403).json({ error: "Token inválido" });
-    }
+    const { id: userId, email: userEmail } = req.user;
 
     // Ensure user exists in our DB
     await pool.query(
