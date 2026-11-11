@@ -13,13 +13,14 @@ router.get("/", async (req, res) => {
     const userId = req.user.id;
     const result = await pool.query(`
       SELECT l.*, l.id as list_id,
+             CASE WHEN l.owner_id = $1 THEN 'owner' ELSE lm.role END AS role,
              COUNT(i.id) as total_items,
              SUM(CASE WHEN i.purchased = true THEN 1 ELSE 0 END) as purchased_items
       FROM lists l
       LEFT JOIN items i ON i.list_id = l.id
       LEFT JOIN list_members lm ON l.id = lm.list_id AND lm.user_id = $1
       WHERE l.owner_id = $1 OR lm.user_id IS NOT NULL
-      GROUP BY l.id
+      GROUP BY l.id, lm.role
       ORDER BY l.created_at DESC
     `, [userId]);
     res.json(result.rows);

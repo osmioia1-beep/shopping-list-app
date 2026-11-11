@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   getLists, createList, updateList, deleteList,
   getItems, addItem, updateItem, toggleItem, deleteItem,
@@ -7,7 +7,19 @@ import {
 
 export function useShoppingList() {
   const [lists, setLists] = useState([]);
-  const [activeListId, setActiveListId] = useState(null);
+  const [activeListId, setSelectedListId] = useState(null);
+  const selectedList = useRef(null);
+  const listRequest = useRef(0);
+  const [accessNotice, setAccessNotice] = useState(null);
+
+  const setActiveListId = useCallback((id) => {
+    if (selectedList.current === id) return;
+    selectedList.current = id;
+    setItems([]);
+    setHistory([]);
+    setStats(null);
+    setSelectedListId(id);
+  }, []);
   const [items, setItems] = useState([]);
   const [history, setHistory] = useState([]);
   const [stats, setStats] = useState(null);
@@ -40,18 +52,21 @@ export function useShoppingList() {
   }
 
   async function loadLists() {
+    const request = ++listRequest.current;
     try {
-      setLoading(true);
-      setError(null);
       const data = await getLists();
+      if (request !== listRequest.current) return;
+      const previous = selectedList.current;
       setLists(data);
-      if (data.length > 0 && !activeListId) {
-        setActiveListId(data[0].id);
+      if (!data.some(list => list.id === previous)) {
+        if (previous !== null) setAccessNotice("Deixaste de ter acesso à lista que estava aberta.");
+        setActiveListId(data[0]?.id ?? null);
       }
+      return selectedList.current;
     } catch (e) {
-      setError(e.message);
+      if (request === listRequest.current) setError(e.message);
     } finally {
-      setLoading(false);
+      if (request === listRequest.current) setLoading(false);
     }
   }
 
@@ -59,16 +74,18 @@ export function useShoppingList() {
     try {
       setError(null);
       const data = await getItems(listId);
-      setItems(data);
+      if (selectedList.current === listId) setItems(data);
     } catch (e) {
-      setError(e.message);
+      if (selectedList.current !== listId) return;
+      if (e.status === 403) await loadLists();
+      else setError(e.message);
     }
   }
 
   async function loadHistory(listId) {
     try {
       const data = await getHistory(listId);
-      setHistory(data);
+      if (selectedList.current === listId) setHistory(data);
     } catch (e) {
       console.error("Failed to load history:", e);
     }
@@ -77,7 +94,7 @@ export function useShoppingList() {
   async function loadStats(listId) {
     try {
       const data = await getStats(listId);
-      setStats(data);
+      if (selectedList.current === listId) setStats(data);
     } catch (e) {
       console.error("Failed to load stats:", e);
     }
@@ -87,7 +104,7 @@ export function useShoppingList() {
   const handleCreateList = useCallback(async (name) => {
     try {
       const newList = await createList(name);
-      setLists((prev) => [newList, ...prev]);
+      setLists((prev) => [{ ...newList, role: 'owner' }, ...prev]);
       setActiveListId(newList.id);
     } catch (e) { setError(e.message); }
   }, []);
@@ -102,19 +119,14 @@ export function useShoppingList() {
   const handleDeleteList = useCallback(async (id) => {
     try {
       await deleteList(id);
-      setLists((prev) => {
-        const filtered = prev.filter((l) => l.id !== id);
-        if (activeListId === id && filtered.length > 0) {
-          setActiveListId(filtered[0].id);
-        }
-        return filtered;
-      });
+      if (selectedList.current === id) setActiveListId(null);
+      await loadLists();
     } catch (e) { setError(e.message); }
-  }, [activeListId]);
+  }, [setActiveListId]);
 
   // Item operations
   const handleAddItem = useCallback(async (name, quantity) => {
-    if (!activeListId) return;
+    if (!activeListId) return false;
     try {
       // Check for duplicate (case-insensitive)
       const normalizedName = name.trim().toLowerCase();
@@ -137,12 +149,19 @@ export function useShoppingList() {
           loadItems(activeListId);
           showToast(`"${existingItem.name}" já existe. Quantidade atualizada para ${newQty}.`);
         }
-        return;
+        return true;
       }
 
       const newItem = await addItem(activeListId, name, quantity);
-      setItems((prev) => [...prev, newItem]);
-    } catch (e) { setError(e.message); }
+      if (selectedList.current === activeListId) {
+        setItems(prev => prev.some(item => item.id === newItem.id) ? prev : [...prev, newItem]);
+      }
+      return true;
+    } catch (e) {
+      if (e.status === 403) await loadLists();
+      else setError("Não foi possível adicionar o artigo. Verifica a ligação e tenta novamente.");
+      return false;
+    }
   }, [activeListId, items, addItem, updateItem, toggleItem, loadItems, setError]);
 
   const handleToggleItem = useCallback(async (itemId) => {
@@ -167,7 +186,7 @@ export function useShoppingList() {
     if (!activeListId) return;
     try {
       await deleteItem(activeListId, itemId);
-      setItems((prev) => prev.filter((i) => i.id !== itemId));
+      if (selectedList.current === activeListId) setItems((prev) => prev.filter((i) => i.id !== itemId));
       loadStats(activeListId);
     } catch (e) { setError(e.message); }
   }, [activeListId]);
@@ -191,7 +210,9 @@ export function useShoppingList() {
       }
 
       const newItem = await addItem(activeListId, name, quantity || 1);
-      setItems((prev) => [...prev, newItem]);
+      if (selectedList.current === activeListId) {
+        setItems(prev => prev.some(item => item.id === newItem.id) ? prev : [...prev, newItem]);
+      }
       showToast(`"${name}" adicionado à lista.`);
     } catch (e) { setError(e.message); }
   }, [activeListId, items]);
@@ -199,7 +220,7 @@ export function useShoppingList() {
   return {
     lists, activeListId, setActiveListId,
     items, history, stats,
-    loading, error, setError, toast,
+    loading, error, setError, toast, accessNotice, setAccessNotice,
     createList: handleCreateList,
     renameList: handleRenameList,
     deleteList: handleDeleteList,
@@ -208,13 +229,9 @@ export function useShoppingList() {
     updateItem: handleUpdateItem,
     deleteItem: handleDeleteItem,
     reAddFromHistory: handleReAddFromHistory,
-    reloadItems: () => activeListId && loadItems(activeListId),
-    reloadAll: () => {
-      if (activeListId) {
-        loadItems(activeListId);
-        loadHistory(activeListId);
-        loadStats(activeListId);
-      }
+    reloadAll: async () => {
+      const listId = await loadLists();
+      if (listId) await Promise.all([loadItems(listId), loadHistory(listId), loadStats(listId)]);
     },
   };
 }

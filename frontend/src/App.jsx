@@ -93,11 +93,14 @@ function AddItemForm({ onAdd }) {
   const [quantity, setQuantity] = useState(1);
   const [error, setError] = useState("");
 
-  const handleSubmit = (e) => {
+  const inputRef = useRef(null);
+  const [saving, setSaving] = useState(false);
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
-    if (!name.trim()) return;
+    if (saving || !name.trim()) return;
 
     const qty = Number(quantity);
     if (!Number.isFinite(qty) || qty < 1) {
@@ -105,9 +108,16 @@ function AddItemForm({ onAdd }) {
       return;
     }
 
-    onAdd(name.trim(), Math.round(qty));
-    setName("");
-    setQuantity(1);
+    setSaving(true);
+    try {
+      if (await onAdd(name.trim(), Math.round(qty))) {
+        setName("");
+        setQuantity(1);
+        inputRef.current?.focus();
+      }
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -115,15 +125,16 @@ function AddItemForm({ onAdd }) {
       <div className="add-form-row">
         <div className="form-top">
           <input
+            ref={inputRef} readOnly={saving} enterKeyHint="done" aria-label="Nome do artigo"
             type="text" name="name" placeholder="Adicionar item..."
             value={name} onChange={(e) => setName(e.target.value)} autoComplete="off"
           />
           <input
-            type="number" name="quantity" max="999"
+            type="number" name="quantity" max="999" inputMode="numeric" aria-label="Quantidade" readOnly={saving}
             value={quantity} onChange={(e) => setQuantity(e.target.valueAsNumber || "")}
           />
         </div>
-        <button type="submit" disabled={!name.trim()}>＋ Adicionar</button>
+        <button type="submit" disabled={saving || !name.trim()}>{saving ? "A adicionar…" : "＋ Adicionar"}</button>
       </div>
       {error && <div className="add-form-error">{error}</div>}
     </form>
@@ -131,7 +142,7 @@ function AddItemForm({ onAdd }) {
 }
 
 // ===== Item Card =====
-function ItemCard({ item, onToggle, onDelete }) {
+function ItemCard({ item, canEdit, onToggle, onDelete }) {
   const [justChecked, setJustChecked] = useState(false);
 
   const handleCheck = useCallback(() => {
@@ -144,12 +155,18 @@ function ItemCard({ item, onToggle, onDelete }) {
 
   return (
     <div className={`item-card ${item.purchased ? "purchased" : ""} ${justChecked ? "just-purchased" : ""}`}>
-      <button className={`item-check ${item.purchased ? "checked" : ""} ${justChecked ? "just-checked" : ""}`} onClick={handleCheck}>
-        {item.purchased ? "✓" : ""}
-      </button>
+      {canEdit ? (
+        <button className={`item-check ${item.purchased ? "checked" : ""} ${justChecked ? "just-checked" : ""}`}
+          onClick={handleCheck} aria-pressed={item.purchased} aria-label={item.name}>
+          {item.purchased ? "✓" : ""}
+        </button>
+      ) : (
+        <span className={`item-check ${item.purchased ? "checked" : ""}`}
+          aria-label={item.purchased ? "Comprado" : "Por comprar"}>{item.purchased ? "✓" : ""}</span>
+      )}
       <div className="item-info"><div className="item-name">{item.name}</div></div>
       <span className="item-quantity-badge">{item.quantity}</span>
-      <button className="item-delete" onClick={handleDelete} aria-label="Apagar">🗑</button>
+      {canEdit && <button className="item-delete" onClick={handleDelete} aria-label="Apagar">🗑</button>}
     </div>
   );
 }
@@ -261,9 +278,7 @@ function HistoryPanel({ history, onReAdd, onClose }) {
                   🕐 {formatDate(h.last_purchased_at)} · 🛒 {h.times_purchased}x comprado
                 </div>
               </div>
-              <button className="history-readd" onClick={() => onReAdd(h.name, h.total_quantity / h.times_purchased || 1)}>
-                ＋
-              </button>
+              {onReAdd && <button className="history-readd" aria-label="Voltar a adicionar" onClick={() => onReAdd(h.name, h.total_quantity / h.times_purchased || 1)}>＋</button>}
             </div>
           ))}
           {history.length > 5 && (
@@ -434,7 +449,7 @@ function LoadingSpinner() {
 }
 
 // ===== Empty State =====
-function EmptyState({ hasSearch }) {
+function EmptyState({ hasSearch, canEdit }) {
   if (hasSearch) {
     return (
       <div className="empty-state">
@@ -446,7 +461,7 @@ function EmptyState({ hasSearch }) {
   return (
     <div className="empty-state">
       <div className="icon">🛒</div><h3>A tua lista está vazia</h3>
-      <div className="empty-divider" /><p>Adiciona itens usando o formulário acima.</p>
+      {canEdit && <><div className="empty-divider" /><p>Adiciona itens usando o formulário acima.</p></>}
     </div>
   );
 }
@@ -496,7 +511,7 @@ export default function App({ onLogout }) {
   const {
     lists, activeListId, setActiveListId,
     items, history, stats,
-    loading, error, setError, toast,
+    loading, error, setError, toast, accessNotice, setAccessNotice,
     createList, renameList, deleteList,
     addItem, toggleItem, deleteItem, reAddFromHistory, reloadAll,
   } = useShoppingList();
@@ -520,9 +535,7 @@ export default function App({ onLogout }) {
   }, []);
 
   // Multi-device realtime sync via Supabase
-  const { syncConnected, lastSyncAt } = useRealtimeSync(activeListId, () => {
-    reloadAll();
-  });
+  const syncConnected = useRealtimeSync(user?.id, reloadAll);
 
   // Share list handler
   const [showShareModal, setShowShareModal] = useState(false);
@@ -616,7 +629,15 @@ export default function App({ onLogout }) {
   };
 
   const activeList = lists.find((l) => l.id === activeListId);
-  const allItems = items || [];
+  const canManage = activeList?.role === "owner";
+  const canEdit = canManage || activeList?.role === "editor";
+  const allItems = activeList ? items : [];
+
+  useEffect(() => {
+    setShowHistory(false);
+    setShowShareModal(false);
+    setSearchQuery("");
+  }, [activeListId]);
 
   const filteredItems = useMemo(() => {
     if (!searchQuery.trim()) return allItems;
@@ -664,6 +685,8 @@ export default function App({ onLogout }) {
           <div className="list-dropdown" ref={listDropdownRef}>
             <button className="list-dropdown-trigger" onClick={() => setShowListDropdown(!showListDropdown)} title="Selecionar lista">
               <span className="list-dropdown-name">{activeList?.name || "Selecionar lista"}</span>
+              {activeList?.role === "viewer" && <small>Só leitura</small>}
+              {activeList?.role === "editor" && <small>Pode editar</small>}
               <span className="list-dropdown-arrow">▾</span>
             </button>
             {showListDropdown && (
@@ -674,12 +697,12 @@ export default function App({ onLogout }) {
                       <span className="list-dropdown-item-name" onClick={() => { setActiveListId(list.id); setShowListDropdown(false); }}>
                         {list.id === activeListId ? "● " : "○ "}{list.name}
                       </span>
-                      <div className="list-dropdown-item-actions">
+                      {list.role === "owner" && <div className="list-dropdown-item-actions">
                         <button className="list-dropdown-action" onClick={() => { setShowListDropdown(false); handleRenameList(list.id); }} title="Renomear">✏️</button>
                         {lists.length > 1 && (
                           <button className="list-dropdown-action delete" onClick={() => { setShowListDropdown(false); handleDeleteList(list.id); }} title="Apagar">🗑️</button>
                         )}
-                      </div>
+                      </div>}
                     </div>
                   ))}
                 </div>
@@ -694,19 +717,19 @@ export default function App({ onLogout }) {
           <span className={`sync-indicator ${syncConnected ? "sync-connected" : "sync-disconnected"}`} title={syncConnected ? "Sincronização em tempo real ativa" : "Sem conexão em tempo real"}>
             {syncConnected ? "🟢" : "🟠"}
           </span>
-          <button className="header-action-btn" onClick={handleShareList} title="Partilhar lista" aria-label="Partilhar lista">
+          {canManage && <button className="header-action-btn" onClick={handleShareList} title="Partilhar lista" aria-label="Partilhar lista">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/>
               <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
             </svg>
-          </button>
-          <button className="header-action-btn" onClick={() => setShowHistory(true)} title="Histórico" aria-label="Histórico">
+          </button>}
+          {activeList && <button className="header-action-btn" onClick={() => setShowHistory(true)} title="Histórico" aria-label="Histórico">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/>
               <path d="M12 7v5l4 2"/>
             </svg>
-          </button>
-          <ExportMenu items={allItems} lists={lists} activeListId={activeListId} />
+          </button>}
+          {activeList && <ExportMenu items={allItems} lists={lists} activeListId={activeListId} />}
           {user && (
             <button className="header-action-btn" onClick={onLogout} title="Sair" aria-label="Sair">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -731,7 +754,8 @@ export default function App({ onLogout }) {
       <ErrorBanner error={error} onDismiss={() => setError(null)} />
       <Toast message={toast} />
 
-      <AddItemForm onAdd={addItem} />
+      {accessNotice && <ErrorBanner error={accessNotice} onDismiss={() => setAccessNotice(null)} />}
+      {canEdit && <AddItemForm key={activeListId} onAdd={addItem} />}
 
       <Toolbar
         searchQuery={searchQuery} setSearchQuery={setSearchQuery}
@@ -747,17 +771,17 @@ export default function App({ onLogout }) {
             {ptrState === "refreshing" ? "⏳ A atualizar..." : ptrY > 70 ? "↗️ Soltar para atualizar" : "⬇️ Puxar para atualizar"}
           </div>
         )}
-        {activeItems.length === 0 && purchasedItems.length === 0 && <EmptyState hasSearch={!!searchQuery.trim()} />}
-        {activeItems.map((item) => <ItemCard key={item.id} item={item} onToggle={toggleItem} onDelete={deleteItem} />)}
+        {activeItems.length === 0 && purchasedItems.length === 0 && (activeList ? <EmptyState hasSearch={!!searchQuery.trim()} canEdit={canEdit} /> : <p className="empty-state">Seleciona ou cria uma lista.</p>)}
+        {activeItems.map((item) => <ItemCard key={item.id} item={item} canEdit={canEdit} onToggle={toggleItem} onDelete={deleteItem} />)}
         {purchasedItems.length > 0 && (
           <>
             <div className="divider">Comprados ✓</div>
-            {purchasedItems.map((item) => <ItemCard key={item.id} item={item} onToggle={toggleItem} onDelete={deleteItem} />)}
+            {purchasedItems.map((item) => <ItemCard key={item.id} item={item} canEdit={canEdit} onToggle={toggleItem} onDelete={deleteItem} />)}
           </>
         )}
       </div>
 
-      {showShareModal && (
+      {showShareModal && canManage && (
         <div className="history-overlay" onClick={() => setShowShareModal(false)}>
           <div className="history-panel share-modal" onClick={(e) => e.stopPropagation()}>
             <div className="history-header">
@@ -810,8 +834,8 @@ export default function App({ onLogout }) {
         </div>
       )}
 
-      {showHistory && (
-        <HistoryPanel history={history} onReAdd={(name, qty) => { reAddFromHistory(name, Math.round(qty) || 1); }} onClose={() => setShowHistory(false)} />
+      {showHistory && activeList && (
+        <HistoryPanel history={history} onReAdd={canEdit ? (name, qty) => reAddFromHistory(name, Math.round(qty) || 1) : undefined} onClose={() => setShowHistory(false)} />
       )}
     </div>
   );

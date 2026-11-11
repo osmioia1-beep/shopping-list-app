@@ -32,7 +32,9 @@ async function fetchJSON(url, options = {}) {
 
   if (!res.ok) {
     // The server returns JSON with an error field
-    throw new Error(data.error || `HTTP ${res.status}`);
+    const error = new Error(data.error || `HTTP ${res.status}`);
+    error.status = res.status;
+    throw error;
   }
 
   return data;
