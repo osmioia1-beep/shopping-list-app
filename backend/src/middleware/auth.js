@@ -71,9 +71,6 @@ function processJWKS(data, kid, resolve, reject) {
 
 const FALLBACK_SECRET = process.env.SUPABASE_JWT_SECRET;
 
-// Debug info attached to request for logging
-let lastJWKSStatus = { status: 'unknown', error: null, timestamp: 0 };
-
 // Middleware to authenticate Supabase JWT tokens
 export function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -96,7 +93,6 @@ export function authenticateToken(req, res, next) {
   // Try JWKS (ES256) verification first
   fetchJWKS(tokenKid)
     .then(publicKey => {
-      lastJWKSStatus = { status: 'ok', error: null, timestamp: Date.now() };
       try {
         const decoded = jwt.verify(token, publicKey, {
           algorithms: ['ES256', 'RS256'],
@@ -110,14 +106,12 @@ export function authenticateToken(req, res, next) {
           ...decoded
         };
         return next();
-      } catch (verifyErr) {
+      } catch {
         // JWKS worked but token itself is invalid
-        console.error('ES256 token verify failed:', verifyErr.message, '| Token prefix:', token.substring(0, 20) + '...');
-        return res.status(403).json({ error: 'Invalid or expired token', debug: 'ES256 verify: ' + verifyErr.message });
+        return res.status(403).json({ error: 'Invalid or expired token' });
       }
     })
     .catch(jwksErr => {
-      lastJWKSStatus = { status: 'error', error: jwksErr.message, timestamp: Date.now() };
       console.error('JWKS fetch/verify failed:', jwksErr.message);
 
       // Fallback: try HS256 with SUPABASE_JWT_SECRET
@@ -139,13 +133,10 @@ export function authenticateToken(req, res, next) {
 
       console.error('All JWT verification methods failed');
       return res.status(403).json({
-        error: 'Invalid or expired token',
-        debug: 'JWKS: ' + jwksErr.message + ' | HS256: failed'
+        error: 'Invalid or expired token'
       });
     });
 }
-
-export function getLastJWKSStatus() { return lastJWKSStatus; }
 
 // Middleware to check if user owns or has access to a list
 export function authorizeListAccess(requireOwner = false) {
@@ -185,4 +176,11 @@ export function authorizeListAccess(requireOwner = false) {
       return res.status(500).json({ error: 'Authorization failed' });
     }
   };
+}
+
+export function requireListWriteAccess(req, res, next) {
+  if (req.listRole !== 'owner' && req.listRole !== 'editor') {
+    return res.status(403).json({ error: 'Editor access required' });
+  }
+  return next();
 }

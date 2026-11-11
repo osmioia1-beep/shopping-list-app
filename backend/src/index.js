@@ -5,9 +5,8 @@ import express from "express";
 import cors from "cors";
 import path from "path";
 import { fileURLToPath } from "url";
-import jwt from "jsonwebtoken";
 import { pool, dbPromise } from "./db/database.js";
-import { authenticateToken, authorizeListAccess } from "./middleware/auth.js";
+import { authenticateToken } from "./middleware/auth.js";
 import listsRouter from "./routes/lists.js";
 import itemsRouter from "./routes/items.js";
 import historyRouter from "./routes/history.js";
@@ -20,77 +19,6 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 app.use(cors());
 app.use(express.json());
-
-// Debug endpoint — BEFORE auth middleware (remove after fixing)
-app.get("/api/debug/env", async (req, res) => {
-  const authHeader = req.headers['authorization'];
-  const headerToken = authHeader && authHeader.split(' ')[1];
-  const queryToken = req.query.token;
-  const token = headerToken || queryToken;
-  const secret = process.env.SUPABASE_JWT_SECRET;
-  const { getLastJWKSStatus } = await import('./middleware/auth.js');
-  const jwksStatus = getLastJWKSStatus();
-
-  const info = {
-    hasJwtSecret: !!secret,
-    jwtSecretLength: secret ? secret.length : 0,
-    hasDbUrl: !!process.env.DATABASE_URL,
-    hasSupabaseUrl: !!process.env.SUPABASE_URL,
-    nodeEnv: process.env.NODE_ENV,
-    port: process.env.PORT,
-    hasAuthHeader: !!authHeader,
-    hasQueryToken: !!queryToken,
-    tokenPrefix: token ? token.substring(0, 30) + '...' : null,
-    jwksStatus,
-  };
-
-  // If a token is provided (via header or query), try to decode and verify it
-  if (token) {
-    try {
-      const decoded = jwt.decode(token);
-      info.decodedHeader = decoded ? { sub: decoded.sub, email: decoded.email, exp: decoded.exp, role: decoded.role, alg: decoded.alg } : null;
-
-      if (decoded) {
-        // Try JWKS verification
-        try {
-          const { createPublicKey } = await import('crypto');
-          const httpsModule = await import('https');
-          const jwtFull = (await import('jsonwebtoken')).default || await import('jsonwebtoken');
-          const supabaseUrl = process.env.SUPABASE_URL;
-          const jwksData = await new Promise((resolve, reject) => {
-            httpsModule.get(`${supabaseUrl}/auth/v1/.well-known/jwks.json`, (res) => {
-              let data = '';
-              res.on('data', chunk => data += chunk);
-              res.on('end', () => resolve(JSON.parse(data)));
-            }).on('error', reject);
-          });
-          const key = jwksData.keys?.[0];
-          const keyObject = createPublicKey({ key, format: 'jwk' });
-          const publicKey = keyObject.export({ format: 'pem', type: 'spki' });
-          const verified = jwtFull.verify(token, publicKey, { algorithms: ['ES256', 'RS256'] });
-          info.jwksVerify = 'SUCCESS';
-          info.jwksVerifiedSub = verified.sub;
-        } catch (jwksErr) {
-          info.jwksVerify = 'FAILED: ' + jwksErr.message;
-        }
-
-        // Try HS256 verification
-        if (secret) {
-          try {
-            const verifiedHS = jwt.verify(token, secret);
-            info.hs256Verify = 'SUCCESS';
-          } catch (hsErr) {
-            info.hs256Verify = 'FAILED: ' + hsErr.message;
-          }
-        }
-      }
-    } catch (decodeErr) {
-      info.decodeError = decodeErr.message;
-    }
-  }
-
-  res.json(info);
-});
 
 // Auth middleware for all API routes
 app.use("/api", authenticateToken);
@@ -293,6 +221,8 @@ app.get("/api/users/me", async (req, res) => {
 app.use("/api/lists", listsRouter);
 app.use("/api/lists/:listId/items", itemsRouter);
 app.use("/api/lists/:listId", historyRouter);
+
+app.use("/api", (_req, res) => res.status(404).json({ error: "API route not found" }));
 
 // Serve frontend in production
 if (process.env.NODE_ENV === "production") {
