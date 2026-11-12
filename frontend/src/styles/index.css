@@ -241,6 +241,7 @@ input {
   transition: background 0.2s;
   max-width: 220px;
 }
+.list-dropdown-trigger small { white-space: nowrap; }
 .list-dropdown-trigger:hover { background: rgba(255,255,255,0.25); }
 
 .list-dropdown-name {
@@ -512,6 +513,7 @@ input {
   flex-shrink: 0; transition: all 0.2s;
   font-size: 0.9rem; color: white;
 }
+button.item-check { width: 44px; height: 44px; }
 .item-check.checked { background: var(--success); border-color: var(--success); }
 
 @keyframes checkPop {
